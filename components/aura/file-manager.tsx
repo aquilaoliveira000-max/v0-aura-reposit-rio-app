@@ -55,6 +55,8 @@ export function FileManager() {
       return
     }
     loadItems('')
+    const interval = setInterval(() => loadItems(currentPath), 30000)
+    return () => clearInterval(interval)
   }, [router])
 
   const loadItems = async (path: string) => {
@@ -365,11 +367,18 @@ export function FileManager() {
 
               {files.map(file => (
                 <div key={file.id} className="group relative cosmic-border p-4 rounded-xl hover:bg-[#1a1a24] transition-all duration-200">
-                  <div className="flex flex-col items-center">
+                  <a
+                    href={`https://drive.google.com/uc?export=download&id=${file.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center group/dl"
+                    title={`Baixar ${file.name}`}
+                  >
                     <FileIcon type={getFileType(file.name)} size={44}/>
-                    <p className="mt-2 text-xs text-white text-center w-full truncate" title={file.name}>{file.name}</p>
+                    <p className="mt-2 text-xs text-white text-center w-full truncate group-hover/dl:text-[#06b6d4] transition-colors" title={file.name}>{file.name}</p>
                     {file.size && <p className="text-[10px] text-[#888899] mt-0.5">{formatFileSize(file.size)}</p>}
-                  </div>
+                    <p className="text-[10px] text-[#3b82f6] mt-0.5 opacity-0 group-hover/dl:opacity-100 transition-opacity">↓ baixar</p>
+                  </a>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">

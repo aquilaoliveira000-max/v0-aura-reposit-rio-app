@@ -4,49 +4,49 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* +Aura Cosmic Dark Theme */
-  --background: #111114;
+  --background: #0d0d12;
   --foreground: #ffffff;
-  --card: #18181c;
+  --card: #13131a;
   --card-foreground: #ffffff;
-  --popover: #18181c;
+  --popover: #13131a;
   --popover-foreground: #ffffff;
   --primary: #3b82f6;
   --primary-foreground: #ffffff;
-  --secondary: #1e1e24;
+  --secondary: #1a1a24;
   --secondary-foreground: #ffffff;
-  --muted: #18181c;
+  --muted: #13131a;
   --muted-foreground: #888899;
-  --accent: #7c3aed;
+  --accent: #8b5cf6;
   --accent-foreground: #ffffff;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #2a2a32;
-  --input: #1e1e24;
+  --border: #1e1e2a;
+  --input: #1a1a24;
   --ring: #3b82f6;
   --radius: 0.5rem;
-  
-  /* Cosmic Colors */
-  --cosmic-blue: #3b82f6;
-  --cosmic-violet: #7c3aed;
-  --cosmic-pink: #ec4899;
-  --cosmic-orange: #f97316;
-  --cosmic-cyan: #06b6d4;
-  
-  /* Surfaces */
-  --surface: #18181c;
-  --surface-hover: #1e1e24;
+
+  /* Cosmic 5-color palette */
+  --c-blue:    #3b82f6;
+  --c-violet:  #8b5cf6;
+  --c-magenta: #d946ef;
+  --c-orange:  #f97316;
+  --c-cyan:    #06b6d4;
+
+  --cosmic-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
+  --cosmic-gradient-90: linear-gradient(90deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
+
+  --surface: #13131a;
+  --surface-hover: #1a1a24;
   --navbar: #000000;
-  --sidebar-bg: #0e0e12;
-  
-  /* Sidebar */
-  --sidebar: #0e0e12;
+  --sidebar-bg: #0a0a0f;
+
+  --sidebar: #0a0a0f;
   --sidebar-foreground: #ffffff;
   --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e1e24;
+  --sidebar-accent: #1a1a24;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #2a2a32;
+  --sidebar-border: #1e1e2a;
   --sidebar-ring: #3b82f6;
 }
 
@@ -84,29 +84,71 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  
-  /* Cosmic Colors */
-  --color-cosmic-blue: var(--cosmic-blue);
-  --color-cosmic-violet: var(--cosmic-violet);
-  --color-cosmic-pink: var(--cosmic-pink);
-  --color-cosmic-orange: var(--cosmic-orange);
-  --color-cosmic-cyan: var(--cosmic-cyan);
-  --color-surface: var(--surface);
-  --color-surface-hover: var(--surface-hover);
-  --color-navbar: var(--navbar);
-  --color-sidebar-bg: var(--sidebar-bg);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground; }
 }
 
-/* Cosmic Gradient Border */
+/* ─── SNAKE BUTTON (landing "Entrar") ─────────────────────────────── */
+@keyframes snake-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.snake-btn-wrap {
+  position: relative;
+  border-radius: 10px;
+  padding: 2px;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.snake-btn-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -150%;
+  background: conic-gradient(
+    from 0deg,
+    transparent   0deg,
+    transparent 190deg,
+    #3b82f6     210deg,
+    #8b5cf6     230deg,
+    #d946ef     250deg,
+    #f97316     270deg,
+    #06b6d4     290deg,
+    transparent 310deg,
+    transparent 360deg
+  );
+  animation: snake-rotate 2.2s linear infinite;
+}
+
+.snake-btn-inner {
+  position: relative;
+  border-radius: 8px;
+  background: #0d0d12;
+  padding: 14px 56px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: white;
+  cursor: pointer;
+  border: none;
+  transition: background 300ms ease, transform 200ms ease;
+  white-space: nowrap;
+}
+
+.snake-btn-wrap:hover .snake-btn-inner {
+  background: linear-gradient(135deg, #3b82f620, #8b5cf620, #d946ef20);
+  transform: scale(1.02);
+}
+
+.snake-btn-wrap:hover::before {
+  animation-duration: 1.2s;
+}
+
+/* ─── COSMIC BORDER (cards, panels) ──────────────────────────────── */
 .cosmic-border {
   position: relative;
   background: var(--surface);
@@ -119,14 +161,18 @@
   inset: 0;
   padding: 1px;
   border-radius: inherit;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
+  opacity: 0.6;
+  transition: opacity 200ms ease;
 }
 
-/* Cosmic Button */
+.cosmic-border:hover::before { opacity: 1; }
+
+/* ─── COSMIC BUTTONS ──────────────────────────────────────────────── */
 .cosmic-btn {
   position: relative;
   background: transparent;
@@ -144,7 +190,7 @@
   inset: 0;
   padding: 1px;
   border-radius: inherit;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -152,154 +198,120 @@
 }
 
 .cosmic-btn:hover {
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
-  color: black;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
+  color: white;
   transform: scale(1.03);
-  box-shadow: 
-    0 0 20px rgba(59, 130, 246, 0.3),
-    0 0 40px rgba(124, 58, 237, 0.2),
-    0 0 60px rgba(6, 182, 212, 0.1);
+  box-shadow:
+    0 0 20px rgba(59,130,246,0.3),
+    0 0 35px rgba(139,92,246,0.2),
+    0 0 50px rgba(217,70,239,0.15),
+    0 0 65px rgba(249,115,22,0.1);
 }
 
-.cosmic-btn:hover::before {
-  opacity: 0;
-}
+.cosmic-btn:hover::before { opacity: 0; }
 
-/* Cosmic Gradient Fill Button */
 .cosmic-btn-filled {
   position: relative;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
   border: none;
   border-radius: 8px;
   color: white;
   cursor: pointer;
   transition: all 300ms ease;
   font-weight: 500;
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .cosmic-btn-filled:hover {
   transform: scale(1.03);
-  box-shadow: 
-    0 0 20px rgba(59, 130, 246, 0.4),
-    0 0 40px rgba(124, 58, 237, 0.3),
-    0 0 60px rgba(6, 182, 212, 0.2);
+  box-shadow:
+    0 0 20px rgba(59,130,246,0.4),
+    0 0 35px rgba(139,92,246,0.3),
+    0 0 50px rgba(217,70,239,0.2),
+    0 0 65px rgba(249,115,22,0.15);
 }
 
-/* Cosmic Spinner */
+/* ─── COSMIC SPINNER ──────────────────────────────────────────────── */
 @keyframes cosmic-spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 @keyframes cosmic-gradient {
-  0% {
-    stroke: #3b82f6;
-  }
-  25% {
-    stroke: #7c3aed;
-  }
-  50% {
-    stroke: #06b6d4;
-  }
-  75% {
-    stroke: #3b82f6;
-  }
-  100% {
-    stroke: #3b82f6;
-  }
+  0%   { stroke: #3b82f6; }
+  20%  { stroke: #8b5cf6; }
+  40%  { stroke: #d946ef; }
+  60%  { stroke: #f97316; }
+  80%  { stroke: #06b6d4; }
+  100% { stroke: #3b82f6; }
 }
 
-.cosmic-spinner {
-  animation: cosmic-spin 1s linear infinite;
-}
-
+.cosmic-spinner { animation: cosmic-spin 1s linear infinite; }
 .cosmic-spinner circle {
-  animation: cosmic-gradient 2s linear infinite;
+  animation: cosmic-gradient 2.5s linear infinite;
   stroke-linecap: round;
 }
 
-/* Cosmic Drop Zone */
+/* ─── DROP ZONE ───────────────────────────────────────────────────── */
 .cosmic-dropzone {
   border: 2px dashed transparent;
-  background-image: linear-gradient(var(--surface), var(--surface)), 
-                    linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
+  background-image:
+    linear-gradient(var(--surface), var(--surface)),
+    linear-gradient(135deg, #3b82f6, #8b5cf6, #d946ef, #f97316, #06b6d4);
   background-origin: border-box;
   background-clip: padding-box, border-box;
   transition: all 300ms ease;
 }
 
-.cosmic-dropzone.dragging {
-  animation: pulse-glow 1.5s ease-in-out infinite;
-}
+.cosmic-dropzone.dragging { animation: pulse-glow 1.5s ease-in-out infinite; }
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 
-      0 0 10px rgba(59, 130, 246, 0.3),
-      0 0 20px rgba(124, 58, 237, 0.2);
+    box-shadow:
+      0 0 10px rgba(59,130,246,0.3),
+      0 0 20px rgba(139,92,246,0.2);
   }
   50% {
-    box-shadow: 
-      0 0 20px rgba(59, 130, 246, 0.5),
-      0 0 40px rgba(124, 58, 237, 0.4),
-      0 0 60px rgba(6, 182, 212, 0.3);
+    box-shadow:
+      0 0 25px rgba(59,130,246,0.5),
+      0 0 45px rgba(139,92,246,0.4),
+      0 0 60px rgba(217,70,239,0.3),
+      0 0 80px rgba(249,115,22,0.2);
   }
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #111114;
-}
-
+/* ─── SCROLLBAR ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0d0d12; }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899);
+  background: linear-gradient(180deg, #3b82f6, #8b5cf6, #d946ef, #f97316);
   border-radius: 4px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #60a5fa, #8b5cf6, #22d3ee);
+  background: linear-gradient(180deg, #60a5fa, #a78bfa, #e879f9, #fb923c);
 }
 
-/* Modal Overlay */
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
-}
-
-/* Cosmic Glow Border */
-.cosmic-glow {
-  box-shadow: 
-    0 0 1px rgba(59, 130, 246, 0.5),
-    0 0 2px rgba(124, 58, 237, 0.3),
-    0 0 4px rgba(236, 72, 153, 0.2);
-}
-
-/* Cosmic Left Accent */
+/* ─── MISC ────────────────────────────────────────────────────────── */
 .cosmic-left-accent {
   position: relative;
 }
-
 .cosmic-left-accent::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  left: 0; top: 0; bottom: 0;
   width: 3px;
-  background: linear-gradient(180deg, #3b82f6, #7c3aed, #06b6d4);
+  background: linear-gradient(180deg, #3b82f6, #8b5cf6, #d946ef, #06b6d4);
   border-radius: 0 2px 2px 0;
 }
 
-/* Arual Font */
+/* ─── ARUAL FONT ──────────────────────────────────────────────────── */
 @font-face {
   font-family: 'Arual';
   src: url('/fonts/Arual.ttf') format('truetype');
