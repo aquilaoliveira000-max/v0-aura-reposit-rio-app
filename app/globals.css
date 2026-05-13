@@ -119,7 +119,7 @@
   inset: 0;
   padding: 1px;
   border-radius: inherit;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899, #f97316);
+  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -144,7 +144,7 @@
   inset: 0;
   padding: 1px;
   border-radius: inherit;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899, #f97316);
+  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -152,13 +152,13 @@
 }
 
 .cosmic-btn:hover {
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899, #f97316);
+  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
   color: black;
   transform: scale(1.03);
   box-shadow: 
     0 0 20px rgba(59, 130, 246, 0.3),
     0 0 40px rgba(124, 58, 237, 0.2),
-    0 0 60px rgba(236, 72, 153, 0.1);
+    0 0 60px rgba(6, 182, 212, 0.1);
 }
 
 .cosmic-btn:hover::before {
@@ -168,7 +168,7 @@
 /* Cosmic Gradient Fill Button */
 .cosmic-btn-filled {
   position: relative;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899, #f97316);
+  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
   border: none;
   border-radius: 8px;
   color: white;
@@ -182,7 +182,7 @@
   box-shadow: 
     0 0 20px rgba(59, 130, 246, 0.4),
     0 0 40px rgba(124, 58, 237, 0.3),
-    0 0 60px rgba(236, 72, 153, 0.2);
+    0 0 60px rgba(6, 182, 212, 0.2);
 }
 
 /* Cosmic Spinner */
@@ -203,10 +203,10 @@
     stroke: #7c3aed;
   }
   50% {
-    stroke: #ec4899;
+    stroke: #06b6d4;
   }
   75% {
-    stroke: #f97316;
+    stroke: #3b82f6;
   }
   100% {
     stroke: #3b82f6;
@@ -226,7 +226,7 @@
 .cosmic-dropzone {
   border: 2px dashed transparent;
   background-image: linear-gradient(var(--surface), var(--surface)), 
-                    linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899, #f97316);
+                    linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
   background-origin: border-box;
   background-clip: padding-box, border-box;
   transition: all 300ms ease;
@@ -246,7 +246,7 @@
     box-shadow: 
       0 0 20px rgba(59, 130, 246, 0.5),
       0 0 40px rgba(124, 58, 237, 0.4),
-      0 0 60px rgba(236, 72, 153, 0.3);
+      0 0 60px rgba(6, 182, 212, 0.3);
   }
 }
 
@@ -266,7 +266,7 @@
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #60a5fa, #8b5cf6, #f472b6);
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6, #22d3ee);
 }
 
 /* Modal Overlay */
@@ -295,6 +295,19 @@
   top: 0;
   bottom: 0;
   width: 3px;
-  background: linear-gradient(180deg, #3b82f6, #7c3aed, #ec4899);
+  background: linear-gradient(180deg, #3b82f6, #7c3aed, #06b6d4);
   border-radius: 0 2px 2px 0;
+}
+
+/* Arual Font */
+@font-face {
+  font-family: 'Arual';
+  src: url('/fonts/Arual.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-arual {
+  font-family: 'Arual', 'Poiret One', cursive;
 }
