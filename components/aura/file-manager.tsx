@@ -1,579 +1,395 @@
 'use client'
 
-import { useState, useCallback, DragEvent } from 'react'
-import { Upload, FolderPlus, ChevronRight, X, MoreVertical, Folder } from 'lucide-react'
+import { useState, useCallback, useRef, DragEvent, useEffect } from 'react'
+import { Upload, FolderPlus, ChevronRight, X, MoreVertical, Folder, LogOut, Camera, CheckCircle2, RefreshCw } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { CosmicButton } from './cosmic-button'
 import { CosmicSpinner } from './cosmic-spinner'
 import { FileIcon } from './file-icons'
-import { 
-  AuraFile, 
-  AuraFolder, 
-  StagedFile, 
-  formatFileSize, 
-  getFileType, 
-  generateId 
-} from '@/lib/aura-types'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { formatFileSize, getFileType, generateId } from '@/lib/aura-types'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
-// Mock initial data
-const initialFolders: AuraFolder = {
-  id: 'root',
-  name: 'Meus Arquivos',
-  parentId: null,
-  children: [
-    {
-      id: 'folder-1',
-      name: 'Projetos',
-      parentId: 'root',
-      children: [
-        {
-          id: 'folder-1-1',
-          name: 'Cliente X',
-          parentId: 'folder-1',
-          children: [],
-          files: [
-            { id: 'file-1', name: 'proposta.pdf', type: 'pdf', size: 2500000, createdAt: new Date() },
-            { id: 'file-2', name: 'briefing.docx', type: 'document', size: 150000, createdAt: new Date() },
-          ]
-        },
-        {
-          id: 'folder-1-2',
-          name: 'Cliente Y',
-          parentId: 'folder-1',
-          children: [],
-          files: []
-        }
-      ],
-      files: [
-        { id: 'file-3', name: 'planejamento-2024.xlsx', type: 'document', size: 450000, createdAt: new Date() },
-      ]
-    },
-    {
-      id: 'folder-2',
-      name: 'Documentos',
-      parentId: 'root',
-      children: [],
-      files: [
-        { id: 'file-4', name: 'contrato.pdf', type: 'pdf', size: 1200000, createdAt: new Date() },
-        { id: 'file-5', name: 'identidade.jpg', type: 'image', size: 3500000, createdAt: new Date() },
-      ]
-    },
-    {
-      id: 'folder-3',
-      name: 'Mídia',
-      parentId: 'root',
-      children: [],
-      files: [
-        { id: 'file-6', name: 'apresentacao.mp4', type: 'video', size: 125000000, createdAt: new Date() },
-        { id: 'file-7', name: 'podcast-ep1.mp3', type: 'audio', size: 45000000, createdAt: new Date() },
-      ]
-    }
-  ],
-  files: []
+interface DriveItem {
+  id: string
+  name: string
+  type: 'file' | 'folder'
+  mimeType?: string
+  size?: number
+  createdAt?: string
 }
 
-function findFolder(root: AuraFolder, path: string[]): AuraFolder | null {
-  if (path.length === 0 || (path.length === 1 && path[0] === root.id)) {
-    return root
-  }
-  
-  let current = root
-  for (let i = 1; i < path.length; i++) {
-    const found = current.children.find(c => c.id === path[i])
-    if (!found) return null
-    current = found
-  }
-  return current
+interface StagedFile {
+  file: File
+  id: string
+  progress: number
+  status: 'pending' | 'uploading' | 'done' | 'error'
+  error?: string
 }
 
-function getAllFolders(folder: AuraFolder, exclude?: string): { id: string; name: string; path: string }[] {
-  const results: { id: string; name: string; path: string }[] = []
-  
-  function traverse(f: AuraFolder, currentPath: string) {
-    if (f.id !== exclude) {
-      results.push({ id: f.id, name: f.name, path: currentPath })
-      for (const child of f.children) {
-        traverse(child, `${currentPath} > ${child.name}`)
-      }
-    }
-  }
-  
-  traverse(folder, folder.name)
-  return results
+interface BreadcrumbItem {
+  name: string
+  path: string
 }
 
 export function FileManager() {
-  const [folders, setFolders] = useState<AuraFolder>(initialFolders)
-  const [currentPath, setCurrentPath] = useState<string[]>(['root'])
-  const [stagedFile, setStagedFile] = useState<StagedFile | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+  const router = useRouter()
+  const [items, setItems] = useState<DriveItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [currentPath, setCurrentPath] = useState('')
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([{ name: 'Meus Arquivos', path: '' }])
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [showNewFolderModal, setShowNewFolderModal] = useState(false)
-  const [showMoveModal, setShowMoveModal] = useState(false)
   const [showRenameModal, setShowRenameModal] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
-  const [selectedItem, setSelectedItem] = useState<{ type: 'file' | 'folder'; id: string } | null>(null)
+  const [selectedItem, setSelectedItem] = useState<DriveItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [selectedMoveTarget, setSelectedMoveTarget] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const currentFolder = findFolder(folders, currentPath)
-  
-  const breadcrumbs = currentPath.map((id, index) => {
-    const pathToHere = currentPath.slice(0, index + 1)
-    const folder = findFolder(folders, pathToHere)
-    return { id, name: folder?.name || id, path: pathToHere }
-  })
-
-  const navigateToFolder = (folderId: string) => {
-    const folder = currentFolder?.children.find(c => c.id === folderId)
-    if (folder) {
-      setCurrentPath([...currentPath, folderId])
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !localStorage.getItem('aura_auth')) {
+      router.push('/')
+      return
     }
+    loadItems('')
+    const interval = setInterval(() => loadItems(currentPath), 30000)
+    return () => clearInterval(interval)
+  }, [router])
+
+  const loadItems = async (path: string) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/upload?folderPath=${encodeURIComponent(path)}`)
+      const data = await res.json()
+      if (data.success) {
+        const allItems: DriveItem[] = [
+          ...data.folders.map((f: any) => ({ ...f, type: 'folder' as const })),
+          ...data.files.map((f: any) => ({ ...f, type: 'file' as const }))
+        ]
+        setItems(allItems)
+      }
+    } catch {}
+    setLoading(false)
   }
 
-  const navigateToBreadcrumb = (path: string[]) => {
+  const navigateTo = (name: string, path: string) => {
     setCurrentPath(path)
+    setBreadcrumbs(prev => [...prev, { name, path }])
+    loadItems(path)
   }
 
-  const handleDragOver = useCallback((e: DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
+  const navigateToBreadcrumb = (index: number) => {
+    const crumb = breadcrumbs[index]
+    setBreadcrumbs(breadcrumbs.slice(0, index + 1))
+    setCurrentPath(crumb.path)
+    loadItems(crumb.path)
+  }
 
-  const handleDragLeave = useCallback((e: DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
-
+  const handleDragOver = useCallback((e: DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
+  const handleDragLeave = useCallback((e: DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
   const handleDrop = useCallback((e: DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    
+    e.preventDefault(); setIsDragging(false)
     const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) {
-      setStagedFile({ file: files[0], id: generateId() })
-    }
+    if (files.length > 0)
+      setStagedFiles(prev => [...prev, ...files.map(f => ({ file: f, id: generateId(), progress: 0, status: 'pending' as const }))])
   }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files && files.length > 0) {
-      setStagedFile({ file: files[0], id: generateId() })
+    const files = Array.from(e.target.files || [])
+    if (files.length > 0)
+      setStagedFiles(prev => [...prev, ...files.map(f => ({ file: f, id: generateId(), progress: 0, status: 'pending' as const }))])
+    e.target.value = ''
+  }
+
+  const uploadFile = async (staged: StagedFile) => {
+    setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'uploading' } : f))
+    try {
+      const formData = new FormData()
+      formData.append('file', staged.file)
+      formData.append('folderPath', currentPath)
+
+      const xhr = new XMLHttpRequest()
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable)
+          setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: Math.round((e.loaded / e.total) * 100) } : f))
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        xhr.open('POST', '/api/upload')
+        xhr.onload = () => {
+          try {
+            const res = JSON.parse(xhr.responseText)
+            if (res.success) resolve()
+            else reject(new Error(res.error || 'Erro no upload'))
+          } catch { reject(new Error('Resposta inválida')) }
+        }
+        xhr.onerror = () => reject(new Error('Erro de conexão'))
+        xhr.send(formData)
+      })
+
+      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
+      setTimeout(() => {
+        setStagedFiles(prev => prev.filter(f => f.id !== staged.id))
+        loadItems(currentPath)
+      }, 1500)
+    } catch (err: any) {
+      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
     }
   }
 
-  const handleUpload = async () => {
-    if (!stagedFile || !currentFolder) return
-    
-    setIsUploading(true)
-    
-    // Simulate upload delay
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    const newFile: AuraFile = {
-      id: stagedFile.id,
-      name: stagedFile.file.name,
-      type: getFileType(stagedFile.file.name),
-      size: stagedFile.file.size,
-      createdAt: new Date()
-    }
-    
-    setFolders(prev => {
-      const updateFolder = (folder: AuraFolder): AuraFolder => {
-        if (folder.id === currentFolder.id) {
-          return { ...folder, files: [...folder.files, newFile] }
-        }
-        return { ...folder, children: folder.children.map(updateFolder) }
-      }
-      return updateFolder(prev)
-    })
-    
-    setStagedFile(null)
-    setIsUploading(false)
+  const handleUploadAll = () => {
+    stagedFiles.filter(f => f.status === 'pending').forEach(uploadFile)
   }
 
-  const handleCreateFolder = () => {
-    if (!newFolderName.trim() || !currentFolder) return
-    
-    const newFolder: AuraFolder = {
-      id: generateId(),
-      name: newFolderName.trim(),
-      parentId: currentFolder.id,
-      children: [],
-      files: []
-    }
-    
-    setFolders(prev => {
-      const updateFolder = (folder: AuraFolder): AuraFolder => {
-        if (folder.id === currentFolder.id) {
-          return { ...folder, children: [...folder.children, newFolder] }
-        }
-        return { ...folder, children: folder.children.map(updateFolder) }
-      }
-      return updateFolder(prev)
-    })
-    
-    setNewFolderName('')
-    setShowNewFolderModal(false)
+  const handleDelete = async (item: DriveItem) => {
+    try {
+      await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: item.type === 'folder' ? 'deleteFolder' : 'delete', id: item.id })
+      })
+      loadItems(currentPath)
+    } catch {}
   }
 
-  const handleDelete = () => {
-    if (!selectedItem || !currentFolder) return
-    
-    setFolders(prev => {
-      const updateFolder = (folder: AuraFolder): AuraFolder => {
-        if (folder.id === currentFolder.id) {
-          if (selectedItem.type === 'file') {
-            return { ...folder, files: folder.files.filter(f => f.id !== selectedItem.id) }
-          } else {
-            return { ...folder, children: folder.children.filter(c => c.id !== selectedItem.id) }
-          }
-        }
-        return { ...folder, children: folder.children.map(updateFolder) }
-      }
-      return updateFolder(prev)
-    })
-    
-    setSelectedItem(null)
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return
+    try {
+      await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createFolder', name: newFolderName.trim(), folderPath: currentPath })
+      })
+      setNewFolderName('')
+      setShowNewFolderModal(false)
+      loadItems(currentPath)
+    } catch {}
   }
 
-  const handleRename = () => {
-    if (!selectedItem || !renameValue.trim() || !currentFolder) return
-    
-    setFolders(prev => {
-      const updateFolder = (folder: AuraFolder): AuraFolder => {
-        if (folder.id === currentFolder.id) {
-          if (selectedItem.type === 'file') {
-            return { 
-              ...folder, 
-              files: folder.files.map(f => 
-                f.id === selectedItem.id ? { ...f, name: renameValue.trim() } : f
-              ) 
-            }
-          } else {
-            return { 
-              ...folder, 
-              children: folder.children.map(c => 
-                c.id === selectedItem.id ? { ...c, name: renameValue.trim() } : c
-              ) 
-            }
-          }
-        }
-        return { ...folder, children: folder.children.map(updateFolder) }
-      }
-      return updateFolder(prev)
-    })
-    
-    setRenameValue('')
-    setShowRenameModal(false)
-    setSelectedItem(null)
+  const handleRename = async () => {
+    if (!selectedItem || !renameValue.trim()) return
+    try {
+      await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rename', id: selectedItem.id, name: renameValue.trim() })
+      })
+      setShowRenameModal(false)
+      setSelectedItem(null)
+      setRenameValue('')
+      loadItems(currentPath)
+    } catch {}
   }
 
-  const handleMove = () => {
-    if (!selectedItem || !selectedMoveTarget || !currentFolder) return
-    
-    // Find the item to move
-    let itemToMove: AuraFile | AuraFolder | null = null
-    if (selectedItem.type === 'file') {
-      itemToMove = currentFolder.files.find(f => f.id === selectedItem.id) || null
-    } else {
-      itemToMove = currentFolder.children.find(c => c.id === selectedItem.id) || null
-    }
-    
-    if (!itemToMove) return
-    
-    setFolders(prev => {
-      const updateFolder = (folder: AuraFolder): AuraFolder => {
-        // Remove from current location
-        if (folder.id === currentFolder.id) {
-          if (selectedItem.type === 'file') {
-            return { ...folder, files: folder.files.filter(f => f.id !== selectedItem.id) }
-          } else {
-            return { ...folder, children: folder.children.filter(c => c.id !== selectedItem.id) }
-          }
-        }
-        // Add to target location
-        if (folder.id === selectedMoveTarget) {
-          if (selectedItem.type === 'file') {
-            return { ...folder, files: [...folder.files, itemToMove as AuraFile] }
-          } else {
-            return { ...folder, children: [...folder.children, { ...(itemToMove as AuraFolder), parentId: folder.id }] }
-          }
-        }
-        return { ...folder, children: folder.children.map(updateFolder) }
-      }
-      return updateFolder(prev)
-    })
-    
-    setShowMoveModal(false)
-    setSelectedMoveTarget(null)
-    setSelectedItem(null)
-  }
-
-  const openRenameModal = (type: 'file' | 'folder', id: string) => {
-    setSelectedItem({ type, id })
-    if (type === 'file') {
-      const file = currentFolder?.files.find(f => f.id === id)
-      setRenameValue(file?.name || '')
-    } else {
-      const folder = currentFolder?.children.find(c => c.id === id)
-      setRenameValue(folder?.name || '')
-    }
-    setShowRenameModal(true)
-  }
-
-  const openMoveModal = (type: 'file' | 'folder', id: string) => {
-    setSelectedItem({ type, id })
-    setShowMoveModal(true)
-  }
-
-  const allFolders = getAllFolders(folders, selectedItem?.type === 'folder' ? selectedItem.id : undefined)
-
-  const hasFiles = (currentFolder?.files.length ?? 0) > 0 || (currentFolder?.children.length ?? 0) > 0
+  const folders = items.filter(i => i.type === 'folder')
+  const files = items.filter(i => i.type === 'file')
+  const hasPending = stagedFiles.some(f => f.status === 'pending')
 
   return (
     <div className="flex h-[calc(100vh-64px)]">
       {/* Sidebar */}
-      <aside className="w-60 bg-sidebar-bg border-r border-border cosmic-glow flex flex-col">
+      <aside className="w-60 bg-[#0a0a0f] border-r border-[#1e1e2a] flex flex-col">
         <div className="p-4">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <h2 className="text-xs font-medium uppercase tracking-wider" style={{background:'linear-gradient(135deg,#3b82f6,#7c3aed,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>
             Meus Arquivos
           </h2>
         </div>
-        
         <nav className="flex-1 overflow-y-auto px-2">
-          <FolderTree 
-            folder={folders} 
-            currentPath={currentPath}
-            onNavigate={(path) => setCurrentPath(path)}
-            level={0}
-          />
-        </nav>
-        
-        <div className="p-4 border-t border-border">
-          <CosmicButton 
-            variant="outline" 
-            size="sm" 
-            className="w-full"
-            onClick={() => setShowNewFolderModal(true)}
+          <button
+            onClick={() => navigateToBreadcrumb(0)}
+            className={cn("w-full text-left py-2 px-3 rounded-lg flex items-center gap-2 transition-colors text-sm",
+              currentPath === '' ? "text-white border-l-2 border-[#7c3aed]" : "text-[#888899] hover:text-white hover:bg-[#1a1a24]")}
           >
-            <FolderPlus size={16} />
-            Nova Pasta
+            <Folder size={15} style={{color: currentPath === '' ? '#7c3aed' : undefined, flexShrink:0}}/>
+            <span className="truncate">Meus Arquivos</span>
+          </button>
+        </nav>
+        <div className="p-4 border-t border-[#1e1e2a] flex flex-col gap-2">
+          <CosmicButton variant="outline" size="sm" className="w-full" onClick={() => setShowNewFolderModal(true)}>
+            <FolderPlus size={16}/> Nova Pasta
           </CosmicButton>
+          <button
+            onClick={() => { localStorage.removeItem('aura_auth'); router.push('/') }}
+            className="flex items-center gap-2 text-xs text-[#888899] hover:text-white transition-colors px-3 py-2"
+          >
+            <LogOut size={14}/> Sair
+          </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 bg-background p-6 overflow-y-auto">
+      {/* Main */}
+      <main className="flex-1 bg-[#0d0d12] p-6 overflow-y-auto">
         {/* Top Bar */}
         <div className="flex items-center justify-between mb-6">
-          {/* Breadcrumbs */}
-          <nav className="flex items-center gap-1 text-sm">
+          <nav className="flex items-center gap-1 text-sm flex-wrap">
             {breadcrumbs.map((crumb, index) => (
-              <div key={crumb.id} className="flex items-center gap-1">
-                {index > 0 && <ChevronRight size={14} className="text-muted-foreground" />}
+              <div key={index} className="flex items-center gap-1">
+                {index > 0 && <ChevronRight size={14} className="text-[#888899]"/>}
                 <button
-                  onClick={() => navigateToBreadcrumb(crumb.path)}
-                  className={cn(
-                    "hover:text-white transition-colors",
-                    index === breadcrumbs.length - 1 ? "text-white" : "text-muted-foreground"
-                  )}
+                  onClick={() => navigateToBreadcrumb(index)}
+                  className={cn("hover:text-white transition-colors", index === breadcrumbs.length - 1 ? "text-white font-medium" : "text-[#888899]")}
                 >
                   {crumb.name}
                 </button>
               </div>
             ))}
           </nav>
-          
-          {/* Actions */}
-          <div className="flex items-center gap-3">
-            <CosmicButton 
-              variant="outline" 
-              size="sm"
-              onClick={() => setShowNewFolderModal(true)}
-            >
-              <FolderPlus size={16} />
-              Nova Pasta
+          <div className="flex items-center gap-2">
+            <button onClick={() => loadItems(currentPath)} className="p-2 text-[#888899] hover:text-white transition-colors" title="Atualizar">
+              <RefreshCw size={16}/>
+            </button>
+            <CosmicButton variant="outline" size="sm" onClick={() => setShowNewFolderModal(true)}>
+              <FolderPlus size={16}/> Nova Pasta
             </CosmicButton>
             <label>
               <CosmicButton variant="filled" size="sm" as="span" className="cursor-pointer">
-                <Upload size={16} />
-                Carregar Arquivo
+                <Upload size={16}/> Carregar
               </CosmicButton>
-              <input 
-                type="file" 
-                className="hidden" 
-                onChange={handleFileSelect}
-              />
+              <input ref={fileInputRef} type="file" className="hidden" multiple onChange={handleFileSelect}/>
             </label>
           </div>
         </div>
 
-        {/* Staged File */}
-        {stagedFile && (
-          <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-cosmic-orange/50 bg-surface">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <FileIcon type={getFileType(stagedFile.file.name)} size={32} />
-                <div>
-                  <p className="text-white font-medium">{stagedFile.file.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatFileSize(stagedFile.file.size)}
-                  </p>
+        {/* Staged Files */}
+        {stagedFiles.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {stagedFiles.map(staged => (
+              <div key={staged.id} className="p-3 rounded-lg border border-[#2a2a3a] bg-[#13131a] flex items-center gap-3">
+                <FileIcon type={getFileType(staged.file.name)} size={28}/>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{staged.file.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-[#888899]">{formatFileSize(staged.file.size)}</p>
+                    {staged.status === 'uploading' && <span className="text-xs text-[#3b82f6]">{staged.progress}%</span>}
+                    {staged.status === 'error' && <span className="text-xs text-red-400 truncate">{staged.error}</span>}
+                    {staged.status === 'done' && <span className="text-xs text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12}/> Enviado</span>}
+                  </div>
+                  {staged.status === 'uploading' && (
+                    <div className="mt-1.5 h-0.5 bg-[#2a2a3a] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-300"
+                        style={{width:`${staged.progress}%`, background:'linear-gradient(90deg,#3b82f6,#7c3aed,#06b6d4)'}}/>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {staged.status === 'uploading' && <CosmicSpinner size={16}/>}
+                  {staged.status === 'pending' && (
+                    <button onClick={() => setStagedFiles(prev => prev.filter(f => f.id !== staged.id))}
+                      className="p-1 hover:bg-[#1e1e2a] rounded transition-colors">
+                      <X size={16} className="text-[#888899]"/>
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <CosmicButton 
-                  variant="filled" 
-                  size="sm"
-                  loading={isUploading}
-                  onClick={handleUpload}
-                >
-                  Carregar
-                </CosmicButton>
-                <button 
-                  onClick={() => setStagedFile(null)}
-                  className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
-                >
-                  <X size={18} className="text-muted-foreground" />
-                </button>
-              </div>
-            </div>
+            ))}
+            {hasPending && (
+              <CosmicButton variant="filled" size="sm" onClick={handleUploadAll} className="w-full mt-2">
+                <Upload size={16}/>
+                Carregar {stagedFiles.filter(f => f.status === 'pending').length > 1
+                  ? `${stagedFiles.filter(f => f.status === 'pending').length} arquivos`
+                  : 'arquivo'}
+              </CosmicButton>
+            )}
           </div>
         )}
 
-        {/* Drop Zone / File Grid */}
-        {!hasFiles && !stagedFile ? (
-          <div
-            className={cn(
-              "cosmic-dropzone rounded-xl p-12 flex flex-col items-center justify-center min-h-[400px]",
-              isDragging && "dragging"
-            )}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <Upload size={48} className="text-muted-foreground mb-4" />
-            <p className="text-white text-lg mb-2">Arraste arquivos aqui</p>
-            <p className="text-muted-foreground text-sm">ou clique em Carregar Arquivo</p>
+        {/* Loading */}
+        {loading && (
+          <div className="flex items-center justify-center h-64">
+            <CosmicSpinner size={32}/>
           </div>
-        ) : (
+        )}
+
+        {/* Empty State */}
+        {!loading && items.length === 0 && stagedFiles.length === 0 && (
+          <div
+            className={cn("rounded-xl p-12 flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed transition-all duration-300 cursor-pointer",
+              isDragging ? "border-[#7c3aed] bg-[#7c3aed]/5" : "border-[#2a2a3a] hover:border-[#3b82f6]/50")}
+            onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+              style={{background:'linear-gradient(135deg,#3b82f620,#7c3aed20,#06b6d420)'}}>
+              <Upload size={28} style={{color:'#7c3aed'}}/>
+            </div>
+            <p className="text-white text-lg font-medium mb-1">Arraste arquivos aqui</p>
+            <p className="text-[#888899] text-sm">ou clique para selecionar — múltiplos arquivos suportados</p>
+          </div>
+        )}
+
+        {/* Grid */}
+        {!loading && (items.length > 0 || stagedFiles.length > 0) && (
           <>
-            {/* Slim Drop Zone */}
             <div
-              className={cn(
-                "cosmic-dropzone rounded-lg p-4 mb-6 flex items-center justify-center",
-                isDragging && "dragging"
-              )}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
+              className={cn("rounded-lg p-3 mb-6 flex items-center justify-center gap-2 border border-dashed transition-all duration-300 cursor-pointer",
+                isDragging ? "border-[#7c3aed] bg-[#7c3aed]/5" : "border-[#2a2a3a] hover:border-[#3b82f6]/40")}
+              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
             >
-              <Upload size={20} className="text-muted-foreground mr-2" />
-              <p className="text-muted-foreground text-sm">Arraste arquivos aqui</p>
+              <Upload size={16} className="text-[#888899]"/>
+              <p className="text-[#888899] text-sm">Arraste ou clique para adicionar arquivos</p>
             </div>
 
-            {/* File Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {/* Folders */}
-              {currentFolder?.children.map(folder => (
-                <div
-                  key={folder.id}
-                  className="group cosmic-border p-4 rounded-lg cursor-pointer hover:bg-surface-hover transition-all"
-                >
-                  <div className="flex items-start justify-between">
-                    <button
-                      onClick={() => navigateToFolder(folder.id)}
-                      className="flex flex-col items-center flex-1"
-                    >
-                      <FileIcon type="folder" size={48} />
-                      <p className="mt-2 text-sm text-white text-center truncate w-full">
-                        {folder.name}
-                      </p>
-                    </button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="p-1 opacity-0 group-hover:opacity-100 hover:bg-surface rounded transition-all">
-                          <MoreVertical size={16} className="text-muted-foreground" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-surface border-border">
-                        <DropdownMenuItem onClick={() => openMoveModal('folder', folder.id)}>
-                          Mover para...
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openRenameModal('folder', folder.id)}>
-                          Renomear
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => {
-                            setSelectedItem({ type: 'folder', id: folder.id })
-                            handleDelete()
-                          }}
-                          className="text-destructive"
-                        >
-                          Excluir
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+              {folders.map(folder => (
+                <div key={folder.id} className="group relative cosmic-border p-4 rounded-xl hover:bg-[#1a1a24] transition-all duration-200">
+                  <button onClick={() => navigateTo(folder.name, currentPath ? `${currentPath}/${folder.name}` : folder.name)}
+                    className="flex flex-col items-center w-full">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                      <defs>
+                        <linearGradient id={`fg-${folder.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#3b82f6"/>
+                          <stop offset="50%" stopColor="#7c3aed"/>
+                          <stop offset="100%" stopColor="#06b6d4"/>
+                        </linearGradient>
+                      </defs>
+                      <path d="M4 12C4 9.79 5.79 8 8 8H18L22 12H40C42.21 12 44 13.79 44 16V36C44 38.21 42.21 40 40 40H8C5.79 40 4 38.21 4 36V12Z"
+                        fill={`url(#fg-${folder.id})`} opacity="0.9"/>
+                    </svg>
+                    <p className="mt-2 text-xs text-white text-center w-full truncate" title={folder.name}>{folder.name}</p>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">
+                        <MoreVertical size={14} className="text-[#888899]"/>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
+                      <DropdownMenuItem onClick={() => { setSelectedItem(folder); setRenameValue(folder.name); setShowRenameModal(true) }}>Renomear</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(folder)} className="text-red-400">Excluir</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               ))}
-              
-              {/* Files */}
-              {currentFolder?.files.map(file => (
-                <div
-                  key={file.id}
-                  className="group cosmic-border p-4 rounded-lg hover:bg-surface-hover transition-all"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex flex-col items-center flex-1">
-                      <FileIcon type={file.type} size={48} />
-                      <p className="mt-2 text-sm text-white text-center truncate w-full">
-                        {file.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatFileSize(file.size)}
-                      </p>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="p-1 opacity-0 group-hover:opacity-100 hover:bg-surface rounded transition-all">
-                          <MoreVertical size={16} className="text-muted-foreground" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-surface border-border">
-                        <DropdownMenuItem onClick={() => openMoveModal('file', file.id)}>
-                          Mover para...
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openRenameModal('file', file.id)}>
-                          Renomear
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => {
-                            setSelectedItem({ type: 'file', id: file.id })
-                            handleDelete()
-                          }}
-                          className="text-destructive"
-                        >
-                          Excluir
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+
+              {files.map(file => (
+                <div key={file.id} className="group relative cosmic-border p-4 rounded-xl hover:bg-[#1a1a24] transition-all duration-200">
+                  <a
+                    href={`https://drive.google.com/uc?export=download&id=${file.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center group/dl"
+                    title={`Baixar ${file.name}`}
+                  >
+                    <FileIcon type={getFileType(file.name)} size={44}/>
+                    <p className="mt-2 text-xs text-white text-center w-full truncate group-hover/dl:text-[#06b6d4] transition-colors" title={file.name}>{file.name}</p>
+                    {file.size && <p className="text-[10px] text-[#888899] mt-0.5">{formatFileSize(file.size)}</p>}
+                    <p className="text-[10px] text-[#3b82f6] mt-0.5 opacity-0 group-hover/dl:opacity-100 transition-opacity">↓ baixar</p>
+                  </a>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">
+                        <MoreVertical size={14} className="text-[#888899]"/>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
+                      <DropdownMenuItem onClick={() => { setSelectedItem(file); setRenameValue(file.name); setShowRenameModal(true) }}>Renomear</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(file)} className="text-red-400">Excluir</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               ))}
             </div>
@@ -581,140 +397,36 @@ export function FileManager() {
         )}
       </main>
 
-      {/* New Folder Modal */}
+      {/* Modals */}
       <Dialog open={showNewFolderModal} onOpenChange={setShowNewFolderModal}>
-        <DialogContent className="bg-surface border-border cosmic-glow">
-          <DialogHeader>
-            <DialogTitle className="text-white">Nova Pasta</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="bg-[#13131a] border-[#2a2a3a]">
+          <DialogHeader><DialogTitle className="text-white">Nova Pasta</DialogTitle></DialogHeader>
           <div className="py-4">
-            <label className="text-sm text-muted-foreground">Nome da pasta</label>
-            <Input
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              className="mt-2 bg-background border-border focus:border-cosmic-blue"
-              placeholder="Digite o nome da pasta"
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
-            />
+            <Input value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
+              className="bg-[#0d0d12] border-[#2a2a3a] text-white" placeholder="Nome da pasta"
+              onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} autoFocus/>
           </div>
           <DialogFooter>
-            <CosmicButton variant="outline" size="sm" onClick={() => setShowNewFolderModal(false)}>
-              Cancelar
-            </CosmicButton>
-            <CosmicButton variant="filled" size="sm" onClick={handleCreateFolder}>
-              Criar
-            </CosmicButton>
+            <CosmicButton variant="outline" size="sm" onClick={() => setShowNewFolderModal(false)}>Cancelar</CosmicButton>
+            <CosmicButton variant="filled" size="sm" onClick={handleCreateFolder}>Criar</CosmicButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Rename Modal */}
       <Dialog open={showRenameModal} onOpenChange={setShowRenameModal}>
-        <DialogContent className="bg-surface border-border cosmic-glow">
-          <DialogHeader>
-            <DialogTitle className="text-white">Renomear</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="bg-[#13131a] border-[#2a2a3a]">
+          <DialogHeader><DialogTitle className="text-white">Renomear</DialogTitle></DialogHeader>
           <div className="py-4">
-            <label className="text-sm text-muted-foreground">Novo nome</label>
-            <Input
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              className="mt-2 bg-background border-border focus:border-cosmic-blue"
-              placeholder="Digite o novo nome"
-              onKeyDown={(e) => e.key === 'Enter' && handleRename()}
-            />
+            <Input value={renameValue} onChange={e => setRenameValue(e.target.value)}
+              className="bg-[#0d0d12] border-[#2a2a3a] text-white" placeholder="Novo nome"
+              onKeyDown={e => e.key === 'Enter' && handleRename()} autoFocus/>
           </div>
           <DialogFooter>
-            <CosmicButton variant="outline" size="sm" onClick={() => setShowRenameModal(false)}>
-              Cancelar
-            </CosmicButton>
-            <CosmicButton variant="filled" size="sm" onClick={handleRename}>
-              Renomear
-            </CosmicButton>
+            <CosmicButton variant="outline" size="sm" onClick={() => setShowRenameModal(false)}>Cancelar</CosmicButton>
+            <CosmicButton variant="filled" size="sm" onClick={handleRename}>Renomear</CosmicButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Move Modal */}
-      <Dialog open={showMoveModal} onOpenChange={setShowMoveModal}>
-        <DialogContent className="bg-surface border-border cosmic-glow">
-          <DialogHeader>
-            <DialogTitle className="text-white">Mover para...</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 max-h-[300px] overflow-y-auto">
-            {allFolders.map(folder => (
-              <button
-                key={folder.id}
-                onClick={() => setSelectedMoveTarget(folder.id)}
-                className={cn(
-                  "w-full text-left p-3 rounded-lg flex items-center gap-2 transition-colors",
-                  selectedMoveTarget === folder.id 
-                    ? "bg-cosmic-blue/20 text-white" 
-                    : "hover:bg-surface-hover text-muted-foreground"
-                )}
-              >
-                <Folder size={18} className="text-cosmic-blue" />
-                <span className="text-sm">{folder.path}</span>
-              </button>
-            ))}
-          </div>
-          <DialogFooter>
-            <CosmicButton variant="outline" size="sm" onClick={() => setShowMoveModal(false)}>
-              Cancelar
-            </CosmicButton>
-            <CosmicButton 
-              variant="filled" 
-              size="sm" 
-              onClick={handleMove}
-              disabled={!selectedMoveTarget}
-            >
-              Mover
-            </CosmicButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-// Folder Tree Component
-function FolderTree({ 
-  folder, 
-  currentPath, 
-  onNavigate, 
-  level 
-}: { 
-  folder: AuraFolder
-  currentPath: string[]
-  onNavigate: (path: string[]) => void
-  level: number
-}) {
-  const isActive = currentPath[currentPath.length - 1] === folder.id
-  const isInPath = currentPath.includes(folder.id)
-  const pathToHere = currentPath.slice(0, currentPath.indexOf(folder.id) + 1)
-  
-  return (
-    <div>
-      <button
-        onClick={() => onNavigate(level === 0 ? ['root'] : pathToHere.length ? pathToHere : [...currentPath.slice(0, level), folder.id])}
-        className={cn(
-          "w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm",
-          isActive ? "cosmic-left-accent bg-surface-hover text-white" : "hover:bg-surface-hover text-muted-foreground hover:text-white"
-        )}
-        style={{ paddingLeft: `${12 + level * 12}px` }}
-      >
-        <Folder size={16} className={isInPath ? "text-cosmic-blue" : ""} />
-        {folder.name}
-      </button>
-      {isInPath && folder.children.map(child => (
-        <FolderTree
-          key={child.id}
-          folder={child}
-          currentPath={currentPath}
-          onNavigate={onNavigate}
-          level={level + 1}
-        />
-      ))}
     </div>
   )
 }
