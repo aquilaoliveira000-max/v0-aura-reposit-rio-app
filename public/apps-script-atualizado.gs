@@ -81,6 +81,24 @@ function doPost(e) {
       return jsonResponse({ success: true })
     }
 
+    if (action === 'move') {
+      const targetFolder = navigateToFolder(payload.targetPath || '', true)
+      try {
+        const file = DriveApp.getFileById(payload.id)
+        const parents = file.getParents()
+        while (parents.hasNext()) { parents.next().removeFile(file) }
+        targetFolder.addFile(file)
+      } catch {
+        try {
+          const folder = DriveApp.getFolderById(payload.id)
+          const parents = folder.getParents()
+          while (parents.hasNext()) { parents.next().removeFolder(folder) }
+          targetFolder.addFolder(folder)
+        } catch(e) { return jsonResponse({ success: false, error: e.message }) }
+      }
+      return jsonResponse({ success: true })
+    }
+
     return jsonResponse({ success: false, error: 'Ação desconhecida' })
   } catch (err) {
     return jsonResponse({ success: false, error: err.message })
