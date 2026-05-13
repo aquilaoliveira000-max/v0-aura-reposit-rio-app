@@ -1,15 +1,15 @@
 'use client'
 
-import { forwardRef, ButtonHTMLAttributes, ElementType, ComponentPropsWithoutRef } from 'react'
+import { forwardRef, ElementType, ComponentPropsWithoutRef } from 'react'
 import { cn } from '@/lib/utils'
 import { CosmicSpinner } from './cosmic-spinner'
 
 type CosmicButtonProps<T extends ElementType = 'button'> = {
-  as?: T
+  as?: T | 'span'
   variant?: 'outline' | 'filled'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
-} & Omit<ComponentPropsWithoutRef<T>, 'as' | 'variant' | 'size' | 'loading'>
+} & Omit<ComponentPropsWithoutRef<'button'>, 'as'>
 
 export const CosmicButton = forwardRef<HTMLButtonElement, CosmicButtonProps>(
   ({ className, variant = 'outline', size = 'md', loading, children, disabled, as, ...props }, ref) => {
@@ -20,7 +20,6 @@ export const CosmicButton = forwardRef<HTMLButtonElement, CosmicButtonProps>(
     }
 
     const baseClass = variant === 'filled' ? 'cosmic-btn-filled' : 'cosmic-btn'
-    
     const classes = cn(
       baseClass,
       sizeClasses[size],
@@ -38,12 +37,7 @@ export const CosmicButton = forwardRef<HTMLButtonElement, CosmicButtonProps>(
     }
 
     return (
-      <button
-        ref={ref}
-        className={classes}
-        disabled={disabled || loading}
-        {...props}
-      >
+      <button ref={ref} className={classes} disabled={disabled || loading} {...props}>
         {loading && <CosmicSpinner size={18} />}
         {children}
       </button>
