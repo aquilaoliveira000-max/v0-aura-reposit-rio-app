@@ -2,38 +2,32 @@ const ROOT_FOLDER_NAME = "Uploads +Aura"
 
 function doGet(e) {
   try {
-    const action = e.parameter.action
     const folderPath = e.parameter.folderPath || ''
+    const folder = navigateToFolder(folderPath)
+    if (!folder) return jsonResponse({ success: false, error: 'Pasta não encontrada' })
 
-    if (action === 'list') {
-      const folder = navigateToFolder(folderPath)
-      if (!folder) return jsonResponse({ success: false, error: 'Pasta não encontrada' })
-
-      const folders = []
-      const foldersIt = folder.getFolders()
-      while (foldersIt.hasNext()) {
-        const f = foldersIt.next()
-        folders.push({ id: f.getId(), name: f.getName(), type: 'folder' })
-      }
-
-      const files = []
-      const filesIt = folder.getFiles()
-      while (filesIt.hasNext()) {
-        const f = filesIt.next()
-        files.push({
-          id: f.getId(),
-          name: f.getName(),
-          type: 'file',
-          mimeType: f.getMimeType(),
-          size: f.getSize(),
-          createdAt: f.getDateCreated().toISOString()
-        })
-      }
-
-      return jsonResponse({ success: true, folders, files })
+    const folders = []
+    const foldersIt = folder.getFolders()
+    while (foldersIt.hasNext()) {
+      const f = foldersIt.next()
+      folders.push({ id: f.getId(), name: f.getName(), type: 'folder' })
     }
 
-    return jsonResponse({ success: false, error: 'Ação inválida' })
+    const files = []
+    const filesIt = folder.getFiles()
+    while (filesIt.hasNext()) {
+      const f = filesIt.next()
+      files.push({
+        id: f.getId(),
+        name: f.getName(),
+        type: 'file',
+        mimeType: f.getMimeType(),
+        size: f.getSize(),
+        createdAt: f.getDateCreated().toISOString()
+      })
+    }
+
+    return jsonResponse({ success: true, folders, files })
   } catch (err) {
     return jsonResponse({ success: false, error: err.message })
   }
@@ -53,14 +47,12 @@ function doPost(e) {
     }
 
     if (action === 'delete') {
-      const file = DriveApp.getFileById(payload.id)
-      file.setTrashed(true)
+      DriveApp.getFileById(payload.id).setTrashed(true)
       return jsonResponse({ success: true })
     }
 
     if (action === 'deleteFolder') {
-      const folder = DriveApp.getFolderById(payload.id)
-      folder.setTrashed(true)
+      DriveApp.getFolderById(payload.id).setTrashed(true)
       return jsonResponse({ success: true })
     }
 
@@ -72,31 +64,40 @@ function doPost(e) {
 
     if (action === 'rename') {
       try {
-        const file = DriveApp.getFileById(payload.id)
-        file.setName(payload.name)
+        DriveApp.getFileById(payload.id).setName(payload.name)
       } catch {
-        const folder = DriveApp.getFolderById(payload.id)
-        folder.setName(payload.name)
+        DriveApp.getFolderById(payload.id).setName(payload.name)
       }
       return jsonResponse({ success: true })
     }
 
     if (action === 'move') {
-      const targetFolder = navigateToFolder(payload.targetPath || '', true)
+      const targetPath = payload.targetPath || ''
+      const targetFolder = navigateToFolder(targetPath, true)
+      
+      // Tenta mover como arquivo primeiro
       try {
         const file = DriveApp.getFileById(payload.id)
-        const parents = file.getParents()
-        while (parents.hasNext()) { parents.next().removeFile(file) }
-        targetFolder.addFile(file)
-      } catch {
-        try {
-          const folder = DriveApp.getFolderById(payload.id)
-          const parents = folder.getParents()
-          while (parents.hasNext()) { parents.next().removeFolder(folder) }
-          targetFolder.addFolder(folder)
-        } catch(e) { return jsonResponse({ success: false, error: e.message }) }
+        file.moveTo(targetFolder)
+        return jsonResponse({ success: true })
+      } catch (fileErr) {}
+      
+      // Se não for arquivo, tenta como pasta
+      try {
+        const folder = DriveApp.getFolderById(payload.id)
+        // Folders não têm moveTo — usa add/remove manualmente
+        const parents = folder.getParents()
+        targetFolder.addFolder(folder)
+        while (parents.hasNext()) {
+          const parent = parents.next()
+          if (parent.getId() !== targetFolder.getId()) {
+            parent.removeFolder(folder)
+          }
+        }
+        return jsonResponse({ success: true })
+      } catch (folderErr) {
+        return jsonResponse({ success: false, error: 'Não foi possível mover: ' + folderErr.message })
       }
-      return jsonResponse({ success: true })
     }
 
     return jsonResponse({ success: false, error: 'Ação desconhecida' })
