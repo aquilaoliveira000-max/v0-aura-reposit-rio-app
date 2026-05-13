@@ -25,19 +25,31 @@ export async function POST(req: NextRequest) {
     bytes.forEach(b => binary += String.fromCharCode(b))
     const base64 = btoa(binary)
 
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fileName: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        data: base64,
-        folderPath,
-      }),
+    const body = JSON.stringify({
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      data: base64,
+      folderPath,
     })
 
-    const result = await response.json()
-    return NextResponse.json(result)
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body).toString(),
+      },
+      body,
+    })
+
+    const text = await response.text()
+
+    try {
+      const result = JSON.parse(text)
+      return NextResponse.json(result)
+    } catch {
+      return NextResponse.json({ success: false, error: 'Apps Script retornou resposta inválida: ' + text.slice(0, 200) })
+    }
+
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
