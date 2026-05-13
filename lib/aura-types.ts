@@ -12,6 +12,7 @@ export interface AuraFolder {
   parentId: string | null
   children: AuraFolder[]
   files: AuraFile[]
+  avatar?: string
 }
 
 export interface StagedFile {
@@ -24,24 +25,20 @@ export function formatFileSize(bytes: number): string {
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
 export function getFileType(filename: string): AuraFile['type'] {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
-  
-  const typeMap: Record<string, AuraFile['type']> = {
-    pdf: 'pdf',
-    jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', svg: 'image',
-    mp4: 'video', webm: 'video', mov: 'video', avi: 'video',
-    mp3: 'audio', wav: 'audio', ogg: 'audio', flac: 'audio',
-    doc: 'document', docx: 'document', txt: 'document', rtf: 'document', xls: 'document', xlsx: 'document', ppt: 'document', pptx: 'document',
-    zip: 'archive', rar: 'archive', '7z': 'archive', tar: 'archive', gz: 'archive',
-  }
-  
-  return typeMap[ext] || 'other'
+  if (['pdf'].includes(ext)) return 'pdf'
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'video'
+  if (['mp3', 'wav', 'ogg', 'aac', 'm4a'].includes(ext)) return 'audio'
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'].includes(ext)) return 'document'
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive'
+  return 'other'
 }
 
 export function generateId(): string {
-  return Math.random().toString(36).substring(2, 15)
+  return Math.random().toString(36).substr(2, 9)
 }
