@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, DragEvent, useEffect } from 'react'
-import { Upload, FolderPlus, ChevronRight, X, MoreVertical, Folder, LogOut, Camera, CheckCircle2, RefreshCw } from 'lucide-react'
+import { Upload, FolderPlus, ChevronRight, X, MoreVertical, Folder, LogOut, CheckCircle2, RefreshCw, FolderOpen } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { CosmicButton } from './cosmic-button'
@@ -27,6 +27,7 @@ interface StagedFile {
   progress: number
   status: 'pending' | 'uploading' | 'done' | 'error'
   error?: string
+  folderPath?: string // para uploads de pasta
 }
 
 interface BreadcrumbItem {
@@ -48,6 +49,12 @@ export function FileManager() {
   const [selectedItem, setSelectedItem] = useState<DriveItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const currentPathRef = useRef('')
+
+  useEffect(() => {
+    currentPathRef.current = currentPath
+  }, [currentPath])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('aura_auth')) {
@@ -55,7 +62,7 @@ export function FileManager() {
       return
     }
     loadItems('')
-    const interval = setInterval(() => loadItems(currentPath), 30000)
+    const interval = setInterval(() => loadItems(currentPathRef.current), 30000)
     return () => clearInterval(interval)
   }, [router])
 
@@ -104,12 +111,27 @@ export function FileManager() {
     e.target.value = ''
   }
 
+  // Upload de pasta — lê webkitRelativePath para preservar estrutura
+  const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    const staged = files.map(f => {
+      const relativePath = (f as any).webkitRelativePath || f.name
+      const parts = relativePath.split('/')
+      const folderPart = parts.slice(0, -1).join('/')
+      const filePath = currentPath ? `${currentPath}/${folderPart}` : folderPart
+      return { file: f, id: generateId(), progress: 0, status: 'pending' as const, folderPath: filePath }
+    })
+    setStagedFiles(prev => [...prev, ...staged])
+    e.target.value = ''
+  }
+
   const uploadFile = async (staged: StagedFile) => {
     setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'uploading' } : f))
     try {
       const formData = new FormData()
       formData.append('file', staged.file)
-      formData.append('folderPath', currentPath)
+      formData.append('folderPath', staged.folderPath ?? currentPathRef.current)
 
       const xhr = new XMLHttpRequest()
       xhr.upload.onprogress = (e) => {
@@ -133,7 +155,7 @@ export function FileManager() {
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
       setTimeout(() => {
         setStagedFiles(prev => prev.filter(f => f.id !== staged.id))
-        loadItems(currentPath)
+        loadItems(currentPathRef.current)
       }, 1500)
     } catch (err: any) {
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
@@ -244,6 +266,21 @@ export function FileManager() {
             <CosmicButton variant="outline" size="sm" onClick={() => setShowNewFolderModal(true)}>
               <FolderPlus size={16}/> Nova Pasta
             </CosmicButton>
+            {/* Carregar Pasta */}
+            <label>
+              <CosmicButton variant="outline" size="sm" as="span" className="cursor-pointer">
+                <FolderOpen size={16}/> Carregar Pasta
+              </CosmicButton>
+              <input
+                ref={folderInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                {...({ webkitdirectory: '' } as any)}
+                onChange={handleFolderSelect}
+              />
+            </label>
+            {/* Carregar Arquivo */}
             <label>
               <CosmicButton variant="filled" size="sm" as="span" className="cursor-pointer">
                 <Upload size={16}/> Carregar
@@ -263,6 +300,7 @@ export function FileManager() {
                   <p className="text-white text-sm font-medium truncate">{staged.file.name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-xs text-[#888899]">{formatFileSize(staged.file.size)}</p>
+                    {staged.folderPath && <p className="text-xs text-[#888899] truncate">→ {staged.folderPath}</p>}
                     {staged.status === 'uploading' && <span className="text-xs text-[#3b82f6]">{staged.progress}%</span>}
                     {staged.status === 'error' && <span className="text-xs text-red-400 truncate">{staged.error}</span>}
                     {staged.status === 'done' && <span className="text-xs text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12}/> Enviado</span>}
@@ -276,10 +314,14 @@ export function FileManager() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {staged.status === 'uploading' && <CosmicSpinner size={16}/>}
-                  {staged.status === 'pending' && (
-                    <button onClick={() => setStagedFiles(prev => prev.filter(f => f.id !== staged.id))}
-                      className="p-1 hover:bg-[#1e1e2a] rounded transition-colors">
-                      <X size={16} className="text-[#888899]"/>
+                  {/* X aparece em pending E em error */}
+                  {(staged.status === 'pending' || staged.status === 'error') && (
+                    <button
+                      onClick={() => setStagedFiles(prev => prev.filter(f => f.id !== staged.id))}
+                      className="p-1 hover:bg-[#1e1e2a] rounded transition-colors"
+                      title="Remover"
+                    >
+                      <X size={16} className={staged.status === 'error' ? 'text-red-400' : 'text-[#888899]'}/>
                     </button>
                   )}
                 </div>
@@ -316,7 +358,7 @@ export function FileManager() {
               <Upload size={28} style={{color:'#7c3aed'}}/>
             </div>
             <p className="text-white text-lg font-medium mb-1">Arraste arquivos aqui</p>
-            <p className="text-[#888899] text-sm">ou clique para selecionar — múltiplos arquivos suportados</p>
+            <p className="text-[#888899] text-sm">ou use os botões acima para carregar arquivos ou pastas</p>
           </div>
         )}
 
@@ -336,8 +378,11 @@ export function FileManager() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {folders.map(folder => (
                 <div key={folder.id} className="group relative cosmic-border p-4 rounded-xl hover:bg-[#1a1a24] transition-all duration-200">
-                  <button onClick={() => navigateTo(folder.name, currentPath ? `${currentPath}/${folder.name}` : folder.name)}
-                    className="flex flex-col items-center w-full">
+                  {/* Botão de navegação separado — ocupa toda a área menos o canto do menu */}
+                  <button
+                    onClick={() => navigateTo(folder.name, currentPath ? `${currentPath}/${folder.name}` : folder.name)}
+                    className="flex flex-col items-center w-full pr-5"
+                  >
                     <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                       <defs>
                         <linearGradient id={`fg-${folder.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -351,17 +396,20 @@ export function FileManager() {
                     </svg>
                     <p className="mt-2 text-xs text-white text-center w-full truncate" title={folder.name}>{folder.name}</p>
                   </button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">
-                        <MoreVertical size={14} className="text-[#888899]"/>
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
-                      <DropdownMenuItem onClick={() => { setSelectedItem(folder); setRenameValue(folder.name); setShowRenameModal(true) }}>Renomear</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(folder)} className="text-red-400">Excluir</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* Menu isolado no canto — não interfere com clique de navegação */}
+                  <div className="absolute top-2 right-2" onClick={e => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">
+                          <MoreVertical size={14} className="text-[#888899]"/>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
+                        <DropdownMenuItem onClick={() => { setSelectedItem(folder); setRenameValue(folder.name); setShowRenameModal(true) }}>Renomear</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(folder)} className="text-red-400">Excluir</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
 
@@ -371,7 +419,7 @@ export function FileManager() {
                     href={`https://drive.google.com/uc?export=download&id=${file.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex flex-col items-center group/dl"
+                    className="flex flex-col items-center group/dl pr-5"
                     title={`Baixar ${file.name}`}
                   >
                     <FileIcon type={getFileType(file.name)} size={44}/>
@@ -379,17 +427,19 @@ export function FileManager() {
                     {file.size && <p className="text-[10px] text-[#888899] mt-0.5">{formatFileSize(file.size)}</p>}
                     <p className="text-[10px] text-[#3b82f6] mt-0.5 opacity-0 group-hover/dl:opacity-100 transition-opacity">↓ baixar</p>
                   </a>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">
-                        <MoreVertical size={14} className="text-[#888899]"/>
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
-                      <DropdownMenuItem onClick={() => { setSelectedItem(file); setRenameValue(file.name); setShowRenameModal(true) }}>Renomear</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(file)} className="text-red-400">Excluir</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="absolute top-2 right-2" onClick={e => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-1 opacity-0 group-hover:opacity-100 hover:bg-[#18181c] rounded transition-all">
+                          <MoreVertical size={14} className="text-[#888899]"/>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
+                        <DropdownMenuItem onClick={() => { setSelectedItem(file); setRenameValue(file.name); setShowRenameModal(true) }}>Renomear</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(file)} className="text-red-400">Excluir</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
             </div>
