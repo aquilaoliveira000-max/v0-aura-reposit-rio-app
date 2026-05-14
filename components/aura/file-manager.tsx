@@ -40,7 +40,7 @@ function isFolder(file: File): boolean {
 }
 
 async function apiPost(body: object) {
-  const res = await fetch('/api/upload', {
+  const res = await fetch('/api/drive', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -90,7 +90,7 @@ export function FileManager() {
   const loadItems = async (path: string, showLoader = true) => {
     if (showLoader) setInitialLoading(true)
     try {
-      const res = await fetch(`/api/upload?folderPath=${encodeURIComponent(path)}`)
+      const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`)
       const data = await res.json()
       if (data.success) {
         setItems([
@@ -193,19 +193,36 @@ export function FileManager() {
   const uploadFile = async (staged: StagedFile) => {
     setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'uploading' } : f))
     try {
-      const formData = new FormData()
-      formData.append('file', staged.file)
-      formData.append('folderPath', staged.folderPath ?? currentPathRef.current)
-      const xhr = new XMLHttpRequest()
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: Math.round((e.loaded / e.total) * 100) } : f))
+      const CHUNK_SIZE = 3 * 1024 * 1024 // 3MB por chunk
+      const file = staged.file
+      const totalSize = file.size
+      const folderPath = staged.folderPath ?? currentPathRef.current
+      let sessionUri: string | null = null
+      let offset = 0
+
+      while (offset < totalSize) {
+        const chunk = file.slice(offset, offset + CHUNK_SIZE)
+        const chunkFile = new File([chunk], file.name, { type: file.type })
+        const formData = new FormData()
+        formData.append('file', chunkFile)
+        formData.append('folderPath', folderPath)
+        formData.append('chunkStart', offset.toString())
+        formData.append('totalSize', totalSize.toString())
+        if (sessionUri) formData.append('sessionUri', sessionUri)
+
+        const res = await fetch('/api/drive', { method: 'POST', body: formData })
+        const data = await res.json()
+
+        if (!data.success) throw new Error(data.error || 'Erro no upload')
+        if (data.sessionUri) sessionUri = data.sessionUri
+
+        offset += chunk.size
+        const progress = Math.min(Math.round((offset / totalSize) * 100), 99)
+        setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress } : f))
+
+        if (data.done) break
       }
-      await new Promise<void>((resolve, reject) => {
-        xhr.open('POST', '/api/upload')
-        xhr.onload = () => { try { const r = JSON.parse(xhr.responseText); r.success ? resolve() : reject(new Error(r.error || 'Erro')) } catch { reject(new Error('Resposta inválida')) } }
-        xhr.onerror = () => reject(new Error('Erro de conexão'))
-        xhr.send(formData)
-      })
+
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
       setTimeout(() => { setStagedFiles(prev => prev.filter(f => f.id !== staged.id)); loadItems(currentPathRef.current, false) }, 1500)
     } catch (err: any) {
