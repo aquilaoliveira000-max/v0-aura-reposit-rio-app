@@ -48,10 +48,12 @@ async function drivePost(path: string, body: object, token: string) {
 
 async function findOrCreateFolder(token: string, name: string, parentId: string): Promise<string> {
   const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
-  const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id)`, token)
+  const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id)&orderBy=createdTime`, token)
   if (data.files?.length > 0) return data.files[0].id
   const folder = await drivePost('files', { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }, token)
-  return folder.id
+  await new Promise(r => setTimeout(r, 200))
+  const check = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id)&orderBy=createdTime`, token)
+  return check.files?.[0]?.id || folder.id
 }
 
 async function resolvePath(token: string, folderPath: string): Promise<string> {

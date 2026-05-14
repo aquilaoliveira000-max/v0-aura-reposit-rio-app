@@ -230,7 +230,20 @@ export function FileManager() {
     }
   }
 
-  const handleUploadAll = () => stagedFiles.filter(f => f.status === 'pending').forEach(uploadFile)
+  const handleUploadAll = async () => {
+    const pending = stagedFiles.filter(f => f.status === 'pending')
+    // Uploads de pasta em sequência para evitar duplicação de pastas no Drive
+    const folderUploads = pending.filter(f => f.folderPath !== undefined && f.folderPath !== currentPathRef.current)
+    const regularUploads = pending.filter(f => f.folderPath === undefined || f.folderPath === currentPathRef.current)
+    
+    // Arquivos regulares: paralelo (rápido)
+    regularUploads.forEach(uploadFile)
+    
+    // Arquivos de pasta: sequencial (evita race condition)
+    for (const staged of folderUploads) {
+      await uploadFile(staged)
+    }
+  }
 
   // ── Delete ─────────────────────────────────────────────────────────
   const handleDelete = async (item: DriveItem) => {
