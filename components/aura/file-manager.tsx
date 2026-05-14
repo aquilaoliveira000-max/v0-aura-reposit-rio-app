@@ -19,6 +19,17 @@ interface DriveItem {
   mimeType?: string
   size?: number
   createdAt?: string
+  thumbnailLink?: string
+  webViewLink?: string
+}
+
+function isImage(mimeType?: string) {
+  return mimeType?.startsWith('image/') || false
+}
+
+function getViewUrl(file: DriveItem) {
+  if (file.webViewLink) return file.webViewLink
+  return `https://drive.google.com/file/d/${file.id}/view`
 }
 
 interface StagedFile {
@@ -72,6 +83,7 @@ export function FileManager() {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [movingIds, setMovingIds] = useState<Set<string>>(new Set())
   const [moveLoading, setMoveLoading] = useState(false)
+  const [isUploadingAll, setIsUploadingAll] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const currentPathRef = useRef('')
@@ -231,18 +243,16 @@ export function FileManager() {
   }
 
   const handleUploadAll = async () => {
+    if (isUploadingAll) return
+    setIsUploadingAll(true)
     const pending = stagedFiles.filter(f => f.status === 'pending')
-    // Uploads de pasta em sequência para evitar duplicação de pastas no Drive
     const folderUploads = pending.filter(f => f.folderPath !== undefined && f.folderPath !== currentPathRef.current)
     const regularUploads = pending.filter(f => f.folderPath === undefined || f.folderPath === currentPathRef.current)
-    
-    // Arquivos regulares: paralelo (rápido)
-    regularUploads.forEach(uploadFile)
-    
-    // Arquivos de pasta: sequencial (evita race condition)
+    await Promise.all(regularUploads.map(uploadFile))
     for (const staged of folderUploads) {
       await uploadFile(staged)
     }
+    setIsUploadingAll(false)
   }
 
   // ── Delete ─────────────────────────────────────────────────────────
@@ -446,8 +456,8 @@ export function FileManager() {
               </div>
             ))}
             {hasPending && (
-              <CosmicButton variant="filled" size="sm" onClick={handleUploadAll} className="w-full mt-2">
-                <Upload size={16}/> Carregar {stagedFiles.filter(f=>f.status==='pending').length > 1 ? `${stagedFiles.filter(f=>f.status==='pending').length} arquivos` : 'arquivo'}
+              <CosmicButton variant="filled" size="sm" onClick={handleUploadAll} className="w-full mt-2" loading={isUploadingAll} disabled={isUploadingAll}>
+                {isUploadingAll ? <><CosmicSpinner size={16}/> Enviando...</> : <><Upload size={16}/> Carregar {stagedFiles.filter(f=>f.status==='pending').length > 1 ? `${stagedFiles.filter(f=>f.status==='pending').length} arquivos` : 'arquivo'}</>}
               </CosmicButton>
             )}
           </div>

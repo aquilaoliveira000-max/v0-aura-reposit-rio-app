@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     const token = await getToken()
     const folderId = await resolvePath(token, folderPath)
     const q = `'${folderId}' in parents and trashed=false`
-    const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime)&pageSize=1000`, token)
+    const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
     const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
     const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime }))
     return NextResponse.json({ success: true, folders, files })
@@ -156,9 +156,9 @@ export async function POST(req: NextRequest) {
     if (action === 'list') {
       const folderId = await resolvePath(token, body.folderPath || '')
       const q = `'${folderId}' in parents and trashed=false`
-      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime)&pageSize=1000`, token)
+      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
       const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
-      const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime }))
+      const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime, thumbnailLink: f.thumbnailLink, webViewLink: f.webViewLink, mimeType: f.mimeType }))
       return NextResponse.json({ success: true, folders, files })
     }
 
