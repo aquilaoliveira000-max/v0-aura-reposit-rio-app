@@ -1,30 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleAuth } from 'google-auth-library'
 
 const ROOT_FOLDER = 'Uploads +Aura'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-function getAuth() {
-  const email = process.env.GOOGLE_SA_EMAIL
-  const key = (process.env.GOOGLE_SA_PRIVATE_KEY || '').replace(/\\n/g, '\n')
-
-  if (!email) throw new Error('GOOGLE_SA_EMAIL não configurada')
-  if (!key || key.length < 100) throw new Error('GOOGLE_SA_PRIVATE_KEY não configurada ou inválida')
-
-  return new GoogleAuth({
-    credentials: { client_email: email, private_key: key },
-    scopes: ['https://www.googleapis.com/auth/drive'],
-  })
-}
-
 async function getToken(): Promise<string> {
-  const auth = getAuth()
-  const client = await auth.getClient()
-  const token = await client.getAccessToken()
-  if (!token.token) throw new Error('Não foi possível obter token de acesso')
-  return token.token
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('Variáveis OAuth não configuradas')
+  }
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  })
+
+  const data = await res.json()
+  if (!data.access_token) throw new Error('Falha ao obter token: ' + JSON.stringify(data))
+  return data.access_token
 }
 
 async function driveGet(path: string, token: string) {
@@ -119,7 +122,10 @@ export async function POST(req: NextRequest) {
         const newSessionUri = initRes.headers.get('location')!
         const uploadRes = await fetch(newSessionUri, {
           method: 'PUT',
-          headers: { 'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${isLast ? totalSize : '*'}`, 'Content-Type': file.type || 'application/octet-stream' },
+          headers: {
+            'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${isLast ? totalSize : '*'}`,
+            'Content-Type': file.type || 'application/octet-stream'
+          },
           body: buffer,
         })
         if (uploadRes.status === 200 || uploadRes.status === 201) {
@@ -130,7 +136,10 @@ export async function POST(req: NextRequest) {
 
       const uploadRes = await fetch(sessionUri, {
         method: 'PUT',
-        headers: { 'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${isLast ? totalSize : '*'}`, 'Content-Type': file.type || 'application/octet-stream' },
+        headers: {
+          'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${isLast ? totalSize : '*'}`,
+          'Content-Type': file.type || 'application/octet-stream'
+        },
         body: buffer,
       })
       if (uploadRes.status === 200 || uploadRes.status === 201) return NextResponse.json({ success: true, done: true })
@@ -152,7 +161,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'delete' || action === 'deleteFolder') {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${body.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      await fetch(`https://www.googleapis.com/drive/v3/files/${body.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
       return NextResponse.json({ success: true })
     }
 
@@ -163,7 +175,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'rename') {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${body.id}`, {
+      await fetch(`https://www.googleapis.com/drive/v3/files/${body.id}`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: body.name })
