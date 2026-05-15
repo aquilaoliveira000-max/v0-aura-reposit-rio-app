@@ -27,6 +27,14 @@ function isImage(mimeType?: string) {
   return mimeType?.startsWith('image/') || false
 }
 
+function isVideo(mimeType?: string) {
+  return mimeType?.startsWith('video/') || false
+}
+
+function getDirectUrl(fileId: string) {
+  return `https://drive.google.com/uc?id=${fileId}`
+}
+
 function getViewUrl(file: DriveItem) {
   if (file.webViewLink) return file.webViewLink
   return `https://drive.google.com/file/d/${file.id}/view`
@@ -84,6 +92,7 @@ export function FileManager() {
   const [movingIds, setMovingIds] = useState<Set<string>>(new Set())
   const [moveLoading, setMoveLoading] = useState(false)
   const [isUploadingAll, setIsUploadingAll] = useState(false)
+  const [previewFile, setPreviewFile] = useState<DriveItem | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const currentPathRef = useRef('')
@@ -619,6 +628,40 @@ export function FileManager() {
           </>
         )}
       </main>
+
+      {/* ── Lightbox de imagem ───────────────────────────────────── */}
+      {previewFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => setPreviewFile(null)}
+        >
+          <button
+            onClick={() => setPreviewFile(null)}
+            className="absolute top-4 right-4 text-white hover:text-[#06b6d4] transition-colors text-2xl font-light"
+          >
+            ✕
+          </button>
+          <div className="max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+            <img
+              src={getDirectUrl(previewFile.id)}
+              alt={previewFile.name}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg"
+            />
+            <div className="flex items-center gap-4">
+              <p className="text-white text-sm truncate max-w-[300px]">{previewFile.name}</p>
+              <a
+                href={`https://drive.google.com/uc?export=download&id=${previewFile.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[#3b82f6] hover:text-[#06b6d4] transition-colors"
+                onClick={e => e.stopPropagation()}
+              >
+                ↓ baixar
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modals ──────────────────────────────────────────────── */}
       <Dialog open={showNewFolderModal} onOpenChange={setShowNewFolderModal}>
