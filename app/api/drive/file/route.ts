@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 async function getToken(): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -18,26 +19,52 @@ async function getToken(): Promise<string> {
 }
 
 export async function GET(req: NextRequest) {
-  const fileId = new URL(req.url).searchParams.get('id')
+  const { searchParams } = new URL(req.url)
+  const fileId = searchParams.get('id')
+  const forceDownload = searchParams.get('download') === '1'
+
   if (!fileId) return new NextResponse('ID não informado', { status: 400 })
 
   try {
     const token = await getToken()
+    const range = req.headers.get('range')
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    }
+    if (range) headers['Range'] = range
+
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers }
     )
 
-    if (!res.ok) return new NextResponse('Arquivo não encontrado', { status: 404 })
+    if (!res.ok && res.status !== 206) {
+      return new NextResponse('Arquivo não encontrado', { status: res.status })
+    }
 
     const contentType = res.headers.get('content-type') || 'application/octet-stream'
-    const buffer = await res.arrayBuffer()
+    const contentLength = res.headers.get('content-length')
+    const contentRange = res.headers.get('content-range')
 
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': contentType,
+      'Cache-Control': 'private, max-age=300',
+      'Accept-Ranges': 'bytes',
+    }
+
+    if (contentLength) responseHeaders['Content-Length'] = contentLength
+    if (contentRange) responseHeaders['Content-Range'] = contentRange
+
+    if (forceDownload) {
+      const nameParam = searchParams.get('name') || 'arquivo'
+      responseHeaders['Content-Disposition'] = `attachment; filename="${nameParam}"`
+    }
+
+    const buffer = await res.arrayBuffer()
     return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=3600',
-      },
+      status: res.status === 206 ? 206 : 200,
+      headers: responseHeaders,
     })
   } catch (err: any) {
     return new NextResponse(err.message, { status: 500 })

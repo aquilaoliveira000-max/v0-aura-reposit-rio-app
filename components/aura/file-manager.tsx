@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, DragEvent, useEffect } from 'react'
-import { Upload, FolderPlus, ChevronRight, X, MoreVertical, Folder, LogOut, CheckCircle2, RefreshCw, FolderOpen, Trash2, Move, Loader2 } from 'lucide-react'
+import { Upload, FolderPlus, ChevronRight, X, MoreVertical, Folder, LogOut, CheckCircle2, RefreshCw, FolderOpen, Trash2, Move, Loader2, Download } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { CosmicButton } from './cosmic-button'
@@ -39,12 +39,22 @@ function canEmbed(mimeType?: string) {
   return isVideo(mimeType) || isPdf(mimeType)
 }
 
-function getEmbedUrl(fileId: string) {
-  return `https://drive.google.com/file/d/${fileId}/preview`
+function getEmbedUrl(file: DriveItem) {
+  if (isVideo(file.mimeType)) return getProxyUrl(file.id, file.name)
+  if (isPdf(file.mimeType)) return getProxyUrl(file.id, file.name)
+  return getProxyUrl(file.id, file.name)
+}
+
+function getProxyUrl(fileId: string, name?: string) {
+  return `/api/drive/file?id=${fileId}${name ? `&name=${encodeURIComponent(name)}` : ''}`
+}
+
+function getDownloadUrl(fileId: string, name?: string) {
+  return `/api/drive/file?id=${fileId}&download=1${name ? `&name=${encodeURIComponent(name)}` : ''}`
 }
 
 function getDirectUrl(fileId: string) {
-  return `/api/drive/file?id=${fileId}`
+  return getProxyUrl(fileId)
 }
 
 function getViewUrl(file: DriveItem) {
@@ -437,6 +447,19 @@ export function FileManager() {
                 <CosmicButton variant="outline" size="sm" onClick={() => openMoveModal()}>
                   <Move size={14}/> Mover
                 </CosmicButton>
+                <button
+                  onClick={() => {
+                    const selectedFiles = items.filter(i => selectedIds.has(i.id) && i.type === 'file')
+                    selectedFiles.forEach(f => {
+                      const a = document.createElement('a')
+                      a.href = getDownloadUrl(f.id, f.name)
+                      a.download = f.name
+                      a.click()
+                    })
+                  }}
+                  className="flex items-center gap-1 text-sm text-[#3b82f6] hover:text-[#06b6d4] transition-colors px-3 py-1.5 rounded-lg border border-[#3b82f6]/30 hover:border-[#3b82f6]/60">
+                  <Download size={14}/> Baixar selecionados
+                </button>
                 <button onClick={handleDeleteSelected}
                   className="flex items-center gap-1 text-sm text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg border border-red-400/30 hover:border-red-400/60">
                   <Trash2 size={14}/> Excluir selecionados
@@ -603,14 +626,34 @@ export function FileManager() {
                       </button>
                     )}
                     {!selectionMode ? (
-                      <a href={getViewUrl(file)}
-                        target="_blank" rel="noopener noreferrer"
-                        className="flex flex-col items-center group/dl pr-5" title={`Baixar ${file.name}`}>
-                        <FileIcon type={getFileType(file.name)} size={44}/>
-                        <p className="mt-2 text-xs text-white text-center w-full truncate group-hover/dl:text-[#06b6d4] transition-colors" title={file.name}>{file.name}</p>
-                        {file.size && <p className="text-[10px] text-[#888899] mt-0.5">{formatFileSize(file.size)}</p>}
-                        <p className="text-[10px] text-[#3b82f6] mt-0.5 opacity-0 group-hover/dl:opacity-100 transition-opacity">↓ baixar</p>
-                      </a>
+                      <div className="flex flex-col items-center w-full pr-5">
+                        <button
+                          onClick={() => {
+                            if (isImage(file.mimeType)) setPreviewFile(file)
+                            else if (canEmbed(file.mimeType)) setEmbedFile(file)
+                            else window.open(getViewUrl(file), '_blank')
+                          }}
+                          className="flex flex-col items-center w-full group/preview"
+                        >
+                          {isImage(file.mimeType) ? (
+                            <div className="w-12 h-12 rounded-lg overflow-hidden border border-[#2a2a3a] mb-1 bg-[#1a1a24]">
+                              <img src={getDirectUrl(file.id)} alt={file.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none' }}/>
+                            </div>
+                          ) : (
+                            <FileIcon type={getFileType(file.name)} size={44}/>
+                          )}
+                          <p className="mt-1 text-xs text-white text-center w-full truncate group-hover/preview:text-[#06b6d4] transition-colors" title={file.name}>{file.name}</p>
+                          {file.size && <p className="text-[10px] text-[#888899] mt-0.5">{formatFileSize(file.size)}</p>}
+                        </button>
+                        <a
+                          href={getDownloadUrl(file.id, file.name)}
+                          onClick={e => e.stopPropagation()}
+                          className="mt-1 w-6 h-6 rounded-full flex items-center justify-center bg-[#1a1a24] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all"
+                          title="Baixar"
+                        >
+                          <Download size={11} className="text-[#3b82f6]"/>
+                        </a>
+                      </div>
                     ) : (
                       <button onClick={() => toggleSelect(file.id)} className="flex flex-col items-center w-full">
                         <FileIcon type={getFileType(file.name)} size={44}/>
@@ -651,13 +694,11 @@ export function FileManager() {
           <button onClick={() => setEmbedFile(null)} className="absolute top-4 right-4 text-white hover:text-[#06b6d4] text-2xl font-light z-10">✕</button>
           <div className="w-[90vw] max-w-4xl flex flex-col gap-3" onClick={e => e.stopPropagation()}>
             <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: isVideo(embedFile.mimeType) ? '16/9' : '4/3' }}>
-              <iframe
-                src={getEmbedUrl(embedFile.id)}
-                width="100%"
-                height="100%"
-                allow="autoplay"
-                className="w-full h-full border-0"
-              />
+              {isVideo(embedFile.mimeType) ? (
+                <video src={getProxyUrl(embedFile.id, embedFile.name)} controls autoPlay className="w-full h-full" />
+              ) : (
+                <iframe src={getEmbedUrl(embedFile)} width="100%" height="100%" className="w-full h-full border-0" />
+              )}
             </div>
             <div className="flex items-center justify-between px-1">
               <p className="text-white text-sm truncate max-w-[400px]">{embedFile.name}</p>
@@ -695,13 +736,11 @@ export function FileManager() {
             <div className="flex items-center gap-4">
               <p className="text-white text-sm truncate max-w-[300px]">{previewFile.name}</p>
               <a
-                href={getViewUrl(previewFile)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-[#3b82f6] hover:text-[#06b6d4] transition-colors"
+                href={getDownloadUrl(previewFile.id, previewFile.name)}
+                className="text-xs text-[#3b82f6] hover:text-[#06b6d4] transition-colors flex items-center gap-1"
                 onClick={e => e.stopPropagation()}
               >
-                ↓ baixar
+                <Download size={12}/> baixar
               </a>
             </div>
           </div>
