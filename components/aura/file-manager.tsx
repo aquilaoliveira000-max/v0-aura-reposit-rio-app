@@ -31,8 +31,20 @@ function isVideo(mimeType?: string) {
   return mimeType?.startsWith('video/') || false
 }
 
+function isPdf(mimeType?: string) {
+  return mimeType === 'application/pdf'
+}
+
+function canEmbed(mimeType?: string) {
+  return isVideo(mimeType) || isPdf(mimeType)
+}
+
+function getEmbedUrl(fileId: string) {
+  return `https://drive.google.com/file/d/${fileId}/preview`
+}
+
 function getDirectUrl(fileId: string) {
-  return `https://drive.google.com/uc?id=${fileId}`
+  return `/api/drive/file?id=${fileId}`
 }
 
 function getViewUrl(file: DriveItem) {
@@ -93,6 +105,7 @@ export function FileManager() {
   const [moveLoading, setMoveLoading] = useState(false)
   const [isUploadingAll, setIsUploadingAll] = useState(false)
   const [previewFile, setPreviewFile] = useState<DriveItem | null>(null)
+  const [embedFile, setEmbedFile] = useState<DriveItem | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const currentPathRef = useRef('')
@@ -628,6 +641,38 @@ export function FileManager() {
           </>
         )}
       </main>
+
+      {/* ── Modal embed (vídeo/PDF) ───────────────────────────────── */}
+      {embedFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => setEmbedFile(null)}
+        >
+          <button onClick={() => setEmbedFile(null)} className="absolute top-4 right-4 text-white hover:text-[#06b6d4] text-2xl font-light z-10">✕</button>
+          <div className="w-[90vw] max-w-4xl flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: isVideo(embedFile.mimeType) ? '16/9' : '4/3' }}>
+              <iframe
+                src={getEmbedUrl(embedFile.id)}
+                width="100%"
+                height="100%"
+                allow="autoplay"
+                className="w-full h-full border-0"
+              />
+            </div>
+            <div className="flex items-center justify-between px-1">
+              <p className="text-white text-sm truncate max-w-[400px]">{embedFile.name}</p>
+              <a
+                href={`https://drive.google.com/uc?export=download&id=${embedFile.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[#3b82f6] hover:text-[#06b6d4] transition-colors"
+              >
+                ↓ baixar
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Lightbox de imagem ───────────────────────────────────── */}
       {previewFile && (
