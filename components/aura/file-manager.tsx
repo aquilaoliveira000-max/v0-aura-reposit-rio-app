@@ -603,7 +603,7 @@ export function FileManager() {
                       </button>
                     )}
                     {!selectionMode ? (
-                      <a href={`https://drive.google.com/uc?export=download&id=${file.id}`}
+                      <a href={getViewUrl(file)}
                         target="_blank" rel="noopener noreferrer"
                         className="flex flex-col items-center group/dl pr-5" title={`Baixar ${file.name}`}>
                         <FileIcon type={getFileType(file.name)} size={44}/>
@@ -662,7 +662,7 @@ export function FileManager() {
             <div className="flex items-center justify-between px-1">
               <p className="text-white text-sm truncate max-w-[400px]">{embedFile.name}</p>
               <a
-                href={`https://drive.google.com/uc?export=download&id=${embedFile.id}`}
+                href={getViewUrl(embedFile)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-[#3b82f6] hover:text-[#06b6d4] transition-colors"
@@ -695,7 +695,7 @@ export function FileManager() {
             <div className="flex items-center gap-4">
               <p className="text-white text-sm truncate max-w-[300px]">{previewFile.name}</p>
               <a
-                href={`https://drive.google.com/uc?export=download&id=${previewFile.id}`}
+                href={getViewUrl(previewFile)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-[#3b82f6] hover:text-[#06b6d4] transition-colors"
