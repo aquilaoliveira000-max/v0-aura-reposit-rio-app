@@ -198,6 +198,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
+    if (action === 'listById') {
+      const q = `'${body.id}' in parents and trashed=false`
+      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime)&pageSize=1000`, token)
+      const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
+      const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), mimeType: f.mimeType }))
+      return NextResponse.json({ success: true, folders, files })
+    }
+
     return NextResponse.json({ success: false, error: 'Ação desconhecida' })
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
