@@ -1,15 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-
-export const dynamic = 'force-dynamic'
-export const maxDuration = 60
-
-let _cachedToken: string | null = null
-let _tokenExpiry = 0
+export const runtime = 'edge'
 
 async function getToken(): Promise<string> {
-  const now = Date.now()
-  if (_cachedToken && _tokenExpiry - now > 120_000) return _cachedToken
-
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -21,61 +12,55 @@ async function getToken(): Promise<string> {
     }),
   })
   const data = await res.json()
-  if (!data.access_token) throw new Error('Token inválido: ' + JSON.stringify(data))
-  _cachedToken = data.access_token
-  _tokenExpiry = now + (data.expires_in || 3600) * 1000
-  return _cachedToken!
+  if (!data.access_token) throw new Error('Token inválido')
+  return data.access_token
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const fileId = searchParams.get('id')
   const forceDownload = searchParams.get('download') === '1'
+  const name = searchParams.get('name') || 'arquivo'
 
-  if (!fileId) return new NextResponse('ID não informado', { status: 400 })
+  if (!fileId) return new Response('ID não informado', { status: 400 })
 
   try {
     const token = await getToken()
-    const range = req.headers.get('range')
+    const range = (req as any).headers?.get?.('range')
 
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    }
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
     if (range) headers['Range'] = range
 
-    const res = await fetch(
+    const driveRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       { headers }
     )
 
-    if (!res.ok && res.status !== 206) {
-      return new NextResponse('Arquivo não encontrado', { status: res.status })
+    if (!driveRes.ok && driveRes.status !== 206) {
+      return new Response('Arquivo não encontrado', { status: driveRes.status })
     }
-
-    const contentType = res.headers.get('content-type') || 'application/octet-stream'
-    const contentLength = res.headers.get('content-length')
-    const contentRange = res.headers.get('content-range')
 
     const responseHeaders: Record<string, string> = {
-      'Content-Type': contentType,
-      'Cache-Control': 'private, max-age=300',
+      'Content-Type': driveRes.headers.get('content-type') || 'application/octet-stream',
       'Accept-Ranges': 'bytes',
+      'Cache-Control': 'private, max-age=300',
     }
 
+    const contentLength = driveRes.headers.get('content-length')
+    const contentRange = driveRes.headers.get('content-range')
     if (contentLength) responseHeaders['Content-Length'] = contentLength
     if (contentRange) responseHeaders['Content-Range'] = contentRange
 
     if (forceDownload) {
-      const nameParam = searchParams.get('name') || 'arquivo'
-      responseHeaders['Content-Disposition'] = `attachment; filename="${nameParam}"`
+      responseHeaders['Content-Disposition'] = `attachment; filename="${encodeURIComponent(name)}"`
     }
 
-    const buffer = await res.arrayBuffer()
-    return new NextResponse(buffer, {
-      status: res.status === 206 ? 206 : 200,
+    // Streaming direto — Edge Runtime mantém a conexão aberta enquanto os dados chegam
+    return new Response(driveRes.body, {
+      status: driveRes.status === 206 ? 206 : 200,
       headers: responseHeaders,
     })
   } catch (err: any) {
-    return new NextResponse(err.message, { status: 500 })
+    return new Response(err.message, { status: 500 })
   }
 }

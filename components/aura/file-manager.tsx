@@ -141,6 +141,8 @@ export function FileManager() {
   const [embedFile, setEmbedFile] = useState<DriveItem | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [zipProgress, setZipProgress] = useState<ZipProgress | null>(null)
+  const [downloadConfirm, setDownloadConfirm] = useState<{ id: string; name: string; size?: number } | null>(null)
+  const uploadXhrs = useRef<Map<string, XMLHttpRequest>>(new Map())
   const [allFolders, setAllFolders] = useState<{id: string; name: string; path: string}[]>([])
   const [loadingFolders, setLoadingFolders] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -352,6 +354,27 @@ export function FileManager() {
     loadItems(currentPath, false)
   }
 
+  const handleDownloadClick = (item: DriveItem) => {
+    setDownloadConfirm({ id: item.id, name: item.name, size: item.size })
+  }
+
+  const confirmDownload = () => {
+    if (!downloadConfirm) return
+    const url = `https://drive.usercontent.google.com/download?id=${downloadConfirm.id}&export=download&confirm=t`
+    const a = document.createElement('a')
+    a.href = url
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setDownloadConfirm(null)
+  }
+
+  const cancelUpload = (id: string) => {
+    const xhr = uploadXhrs.current.get(id)
+    if (xhr) { xhr.abort(); uploadXhrs.current.delete(id) }
+    setStagedFiles(prev => prev.filter(f => f.id !== id))
+  }
+
   const handleDownloadFolder = async (folder: DriveItem) => {
     setZipProgress({ current: 0, total: 1, name: 'Preparando...' })
     try {
@@ -389,10 +412,8 @@ export function FileManager() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
         {item.type === 'file' && (
-          <DropdownMenuItem asChild>
-            <a href={getDownloadUrl(item.id, item.name)} className="flex items-center gap-2">
-              <Download size={14}/> Baixar
-            </a>
+          <DropdownMenuItem onClick={() => handleDownloadClick(item)} className="flex items-center gap-2">
+            <Download size={14}/> Baixar
           </DropdownMenuItem>
         )}
         {item.type === 'folder' && (
@@ -479,11 +500,11 @@ export function FileManager() {
         {!selectionMode && (
           <div className="absolute bottom-2 right-2" onClick={e => e.stopPropagation()}>
             {item.type === 'file' ? (
-              <a href={getDownloadUrl(item.id, item.name)}
+              <a onClick={() => handleDownloadClick(item)}
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
                 title="Baixar">
                 <Download size={13} className="text-[#3b82f6]"/>
-              </a>
+              </button>
             ) : (
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
@@ -553,7 +574,7 @@ export function FileManager() {
         {!selectionMode && !isDeleting && !isMoving && (
           <div className="flex items-center gap-1 shrink-0">
             {item.type === 'file' ? (
-              <a href={getDownloadUrl(item.id, item.name)} onClick={e => e.stopPropagation()}
+              <a onClick={() => handleDownloadClick(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
               </a>
@@ -745,8 +766,8 @@ export function FileManager() {
                   )}
                 </div>
                 {s.status === 'uploading' && <CosmicSpinner size={16}/>}
-                {(s.status === 'pending' || s.status === 'error') && (
-                  <button onClick={() => setStagedFiles(prev => prev.filter(f => f.id !== s.id))} className="p-1 rounded hover:bg-[#1e1e2a]">
+                {s.status !== 'done' && (
+                  <button onClick={() => cancelUpload(s.id)} className="p-1 rounded hover:bg-[#1e1e2a]" title="Cancelar">
                     <X size={16} className={s.status === 'error' ? 'text-red-400' : 'text-[#888899]'}/>
                   </button>
                 )}
@@ -844,10 +865,10 @@ export function FileManager() {
             <img src={getProxyUrl(previewFile.id, previewFile.name)} alt={previewFile.name} className="max-w-full max-h-[80vh] object-contain rounded-xl"/>
             <div className="flex items-center gap-4">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{previewFile.name}</p>
-              <a href={getDownloadUrl(previewFile.id, previewFile.name)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all">
+              <a onClick={() => handleDownloadClick(previewFile)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all cursor-pointer">
                 <Download size={16}/> Baixar
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -869,10 +890,10 @@ export function FileManager() {
             </div>
             <div className="flex items-center justify-between">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{embedFile.name}</p>
-              <a href={getDownloadUrl(embedFile.id, embedFile.name)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all">
+              <a onClick={() => handleDownloadClick(embedFile)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all cursor-pointer">
                 <Download size={16}/> Baixar
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -894,6 +915,33 @@ export function FileManager() {
               <div className="h-full rounded-full transition-all duration-300"
                 style={{width: zipProgress.total > 0 ? `${Math.round((zipProgress.current/zipProgress.total)*100)}%` : '10%',
                   background:'linear-gradient(90deg,#3b82f6,#7c3aed,#06b6d4)'}}/>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO DOWNLOAD */}
+      {downloadConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setDownloadConfirm(null)}>
+          <div className="bg-[#13131a] border border-[#2a2a3a] rounded-2xl p-8 w-[90vw] max-w-sm flex flex-col gap-5" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-2">
+              <p className="text-white font-medium text-base truncate">{downloadConfirm.name}</p>
+              {downloadConfirm.size && (
+                <p className="text-[#888899] text-sm">{formatFileSize(downloadConfirm.size)}</p>
+              )}
+              <p className="text-[#888899] text-sm mt-1">Confirmar download deste arquivo?</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDownloadConfirm(null)}
+                className="flex-1 py-3 rounded-xl border border-[#2a2a3a] text-[#888899] text-sm hover:bg-[#1a1a24] transition-colors">
+                Cancelar
+              </button>
+              <button onClick={confirmDownload}
+                className="flex-1 py-3 rounded-xl text-white text-sm font-medium transition-all"
+                style={{background:'linear-gradient(135deg,#3b82f6,#7c3aed,#06b6d4)'}}>
+                <Download size={16} className="inline mr-2"/>
+                Baixar
+              </button>
             </div>
           </div>
         </div>
