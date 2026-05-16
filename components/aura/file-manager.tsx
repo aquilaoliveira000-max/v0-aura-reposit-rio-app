@@ -35,7 +35,8 @@ const isPdf   = (m?: string, n?: string) => m === 'application/pdf' || getExt(n|
 const canPreview = (m?: string, n?: string) => isImage(m,n) || isVideo(m,n) || isPdf(m,n)
 const isFolderFile = (f: File) => f.size === 0 && f.type === ''
 const getProxyUrl = (id: string, name?: string) => `/api/drive/file?id=${id}${name?`&name=${encodeURIComponent(name)}`:''}`
-const getDownloadUrl = (id: string, name?: string) => `/api/drive/file?id=${id}&download=1${name?`&name=${encodeURIComponent(name)}`:''}`
+// Download vai direto ao Drive — sem proxy, sem timeout, sem limite de tamanho
+const getDownloadUrl = (id: string, _name?: string) => `https://drive.google.com/uc?export=download&id=${id}`
 
 async function apiPost(body: object) {
   const res = await fetch('/api/drive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
