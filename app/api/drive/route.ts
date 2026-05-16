@@ -5,7 +5,17 @@ const ROOT_FOLDER = 'Uploads +Aura'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// Cache de token — evita renovação a cada chunk
+let _cachedToken: string | null = null
+let _tokenExpiry = 0
+
 async function getToken(): Promise<string> {
+  const now = Date.now()
+  // Reutiliza token se ainda válido (com 2 min de margem)
+  if (_cachedToken && _tokenExpiry - now > 120_000) {
+    return _cachedToken
+  }
+
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
@@ -27,7 +37,10 @@ async function getToken(): Promise<string> {
 
   const data = await res.json()
   if (!data.access_token) throw new Error('Falha ao obter token: ' + JSON.stringify(data))
-  return data.access_token
+
+  _cachedToken = data.access_token
+  _tokenExpiry = now + (data.expires_in || 3600) * 1000
+  return _cachedToken!
 }
 
 async function driveGet(path: string, token: string) {

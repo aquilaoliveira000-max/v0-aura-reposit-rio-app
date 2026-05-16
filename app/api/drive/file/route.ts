@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+let _cachedToken: string | null = null
+let _tokenExpiry = 0
+
 async function getToken(): Promise<string> {
+  const now = Date.now()
+  if (_cachedToken && _tokenExpiry - now > 120_000) return _cachedToken
+
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -15,7 +21,10 @@ async function getToken(): Promise<string> {
     }),
   })
   const data = await res.json()
-  return data.access_token
+  if (!data.access_token) throw new Error('Token inválido: ' + JSON.stringify(data))
+  _cachedToken = data.access_token
+  _tokenExpiry = now + (data.expires_in || 3600) * 1000
+  return _cachedToken!
 }
 
 export async function GET(req: NextRequest) {

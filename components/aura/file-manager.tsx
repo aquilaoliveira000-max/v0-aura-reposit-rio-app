@@ -42,6 +42,24 @@ async function apiPost(body: object) {
   return res.json()
 }
 
+async function fetchAllFolders(
+  path: string,
+  parentLabel: string,
+  result: {id: string; name: string; path: string}[],
+  depth = 0
+) {
+  if (depth > 4) return // limite de profundidade
+  const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`)
+  const data = await res.json()
+  if (!data.success) return
+  for (const f of data.folders) {
+    const fullPath = path ? `${path}/${f.name}` : f.name
+    const label = parentLabel ? `${parentLabel} › ${f.name}` : f.name
+    result.push({ id: f.id, name: f.name, path: fullPath, label } as any)
+    await fetchAllFolders(fullPath, label, result, depth + 1)
+  }
+}
+
 async function listFolderContents(folderPath: string): Promise<DriveItem[]> {
   const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(folderPath)}`)
   const data = await res.json()
@@ -122,6 +140,8 @@ export function FileManager() {
   const [embedFile, setEmbedFile] = useState<DriveItem | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [zipProgress, setZipProgress] = useState<ZipProgress | null>(null)
+  const [allFolders, setAllFolders] = useState<{id: string; name: string; path: string}[]>([])
+  const [loadingFolders, setLoadingFolders] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const currentPathRef = useRef('')
@@ -261,15 +281,23 @@ export function FileManager() {
     setSelectedIds(new Set()); setSelectionMode(false); loadItems(currentPath, false)
   }
 
-  const openMoveModal = (item?: DriveItem) => {
+  const openMoveModal = async (item?: DriveItem) => {
     if (item) setSelectedIds(new Set([item.id]))
     setMoveFolderPath(''); setShowMoveModal(true)
+    setLoadingFolders(true)
+    const result: any[] = []
+    await fetchAllFolders('', '', result)
+    // Filtra a própria pasta selecionada e suas subpastas
+    const excludeIds = item?.type === 'folder' ? new Set([item.id]) : new Set<string>()
+    setAllFolders(result.filter((f: any) => !excludeIds.has(f.id)))
+    setLoadingFolders(false)
   }
 
   const handleMoveSelected = async () => {
     setMoveLoading(true)
     const ids = Array.from(selectedIds)
-    ids.forEach(id => setMovingIds(prev => new Set(prev).add(id)))
+    // Só escurece se for seleção múltipla real (selectionMode ativo)
+    if (selectionMode) ids.forEach(id => setMovingIds(prev => new Set(prev).add(id)))
     await Promise.all(ids.map(id => apiPost({ action: 'move', id, targetPath: moveFolderPath })))
     setMovingIds(new Set()); setSelectedIds(new Set()); setSelectionMode(false)
     setShowMoveModal(false); setMoveLoading(false); loadItems(currentPath, false)
@@ -881,16 +909,22 @@ export function FileManager() {
                 moveFolderPath === '' ? "bg-[#3b82f6]/20 text-white" : "text-[#888899] hover:bg-[#1e1e2a]")}>
               <Folder size={18} className="text-[#3b82f6] shrink-0"/> Meus Arquivos (raiz)
             </button>
-            {availableFolders.map(f => {
-              const path = currentPath ? `${currentPath}/${f.name}` : f.name
-              return (
-                <button key={f.id} onClick={() => setMoveFolderPath(path)}
-                  className={cn("w-full text-left p-4 rounded-xl flex items-center gap-3 text-sm transition-colors",
-                    moveFolderPath === path ? "bg-[#3b82f6]/20 text-white" : "text-[#888899] hover:bg-[#1e1e2a]")}>
-                  <Folder size={18} className="text-[#3b82f6] shrink-0"/> {f.name}
+            {loadingFolders ? (
+              <div className="flex items-center justify-center py-8">
+                <CosmicSpinner size={24}/>
+              </div>
+            ) : allFolders.length === 0 ? (
+              <p className="text-sm text-[#888899] text-center py-4">Nenhuma outra pasta disponível</p>
+            ) : (
+              allFolders.map((f: any) => (
+                <button key={f.path} onClick={() => setMoveFolderPath(f.path)}
+                  className={cn("w-full text-left p-3 rounded-xl flex items-center gap-3 text-sm transition-colors",
+                    moveFolderPath === f.path ? "bg-[#3b82f6]/20 text-white" : "text-[#888899] hover:bg-[#1e1e2a]")}>
+                  <Folder size={16} className="text-[#3b82f6] shrink-0"/>
+                  <span className="truncate">{f.label || f.name}</span>
                 </button>
-              )
-            })}
+              ))
+            )}
           </div>
           <DialogFooter className="gap-2">
             <CosmicButton variant="outline" size="sm" onClick={() => setShowMoveModal(false)}>Cancelar</CosmicButton>
