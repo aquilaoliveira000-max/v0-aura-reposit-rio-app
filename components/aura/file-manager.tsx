@@ -36,7 +36,7 @@ const canPreview = (m?: string, n?: string) => isImage(m,n) || isVideo(m,n) || i
 const isFolderFile = (f: File) => f.size === 0 && f.type === ''
 const getProxyUrl = (id: string, name?: string) => `/api/drive/file?id=${id}${name?`&name=${encodeURIComponent(name)}`:''}`
 // Download vai direto ao Drive — sem proxy, sem timeout, sem limite de tamanho
-const getDownloadUrl = (id: string, _name?: string) => `https://drive.google.com/uc?export=download&id=${id}`
+const getDownloadUrl = (id: string, _name?: string) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`
 
 async function apiPost(body: object) {
   const res = await fetch('/api/drive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -230,29 +230,61 @@ export function FileManager() {
   const uploadFile = async (staged: StagedFile) => {
     setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'uploading' } : f))
     try {
-      const CHUNK = 3 * 1024 * 1024
+      const CHUNK = 8 * 1024 * 1024 // 8MB por chunk direto ao Drive
       const { file } = staged
       const totalSize = file.size
       const folderPath = staged.folderPath ?? currentPathRef.current
-      let sessionUri: string | null = null
+
+      // Passo 1: pede session URI ao nosso servidor (autenticação)
+      const startRes = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'startUpload',
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          totalSize,
+          folderPath,
+        })
+      })
+      const startData = await startRes.json()
+      if (!startData.success || !startData.sessionUri) throw new Error(startData.error || 'Erro ao iniciar upload')
+
+      const sessionUri = startData.sessionUri
+
+      // Passo 2: envia chunks DIRETO ao Drive (sem passar pelo Vercel)
       let offset = 0
       while (offset < totalSize) {
         const chunk = file.slice(offset, offset + CHUNK)
-        const chunkFile = new File([chunk], file.name, { type: file.type })
-        const formData = new FormData()
-        formData.append('file', chunkFile); formData.append('folderPath', folderPath)
-        formData.append('chunkStart', offset.toString()); formData.append('totalSize', totalSize.toString())
-        if (sessionUri) formData.append('sessionUri', sessionUri)
-        const res = await fetch('/api/drive', { method: 'POST', body: formData })
-        const data = await res.json()
-        if (!data.success) throw new Error(data.error || 'Erro')
-        if (data.sessionUri) sessionUri = data.sessionUri
+        const end = offset + chunk.size - 1
+        const isLast = end + 1 >= totalSize
+
+        const uploadRes = await fetch(sessionUri, {
+          method: 'PUT',
+          headers: {
+            'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+            'Content-Type': file.type || 'application/octet-stream',
+          },
+          body: chunk,
+        })
+
+        if (uploadRes.status !== 200 && uploadRes.status !== 201 && uploadRes.status !== 308) {
+          throw new Error(`Erro no chunk: ${uploadRes.status}`)
+        }
+
         offset += chunk.size
-        setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: Math.min(Math.round((offset / totalSize) * 100), 99) } : f))
-        if (data.done) break
+        setStagedFiles(prev => prev.map(f =>
+          f.id === staged.id ? { ...f, progress: Math.min(Math.round((offset / totalSize) * 100), 99) } : f
+        ))
+
+        if (isLast && (uploadRes.status === 200 || uploadRes.status === 201)) break
       }
+
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
-      setTimeout(() => { setStagedFiles(prev => prev.filter(f => f.id !== staged.id)); loadItems(currentPathRef.current, false) }, 1500)
+      setTimeout(() => {
+        setStagedFiles(prev => prev.filter(f => f.id !== staged.id))
+        loadItems(currentPathRef.current, false)
+      }, 1500)
     } catch (err: any) {
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
     }

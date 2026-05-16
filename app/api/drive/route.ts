@@ -166,6 +166,23 @@ export async function POST(req: NextRequest) {
     const { action } = body
     const token = await getToken()
 
+    if (action === 'startUpload') {
+      const folderId = await resolvePath(token, body.folderPath || '')
+      const initRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Upload-Content-Type': body.mimeType || 'application/octet-stream',
+          'X-Upload-Content-Length': String(body.totalSize || 0),
+        },
+        body: JSON.stringify({ name: body.fileName, parents: [folderId] })
+      })
+      if (!initRes.ok) return NextResponse.json({ success: false, error: 'Erro ao iniciar: ' + await initRes.text() })
+      const sessionUri = initRes.headers.get('location')
+      return NextResponse.json({ success: true, sessionUri })
+    }
+
     if (action === 'list') {
       const folderId = await resolvePath(token, body.folderPath || '')
       const q = `'${folderId}' in parents and trashed=false`
