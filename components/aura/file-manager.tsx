@@ -577,7 +577,7 @@ export function FileManager() {
               <button onClick={() => handleDownloadClick(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
-              </a>
+              </button>
             ) : (
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
