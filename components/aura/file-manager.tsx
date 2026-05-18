@@ -574,7 +574,7 @@ export function FileManager() {
         {!selectionMode && !isDeleting && !isMoving && (
           <div className="flex items-center gap-1 shrink-0">
             {item.type === 'file' ? (
-              <a onClick={() => handleDownloadClick(item)}
+              <button onClick={() => handleDownloadClick(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
               </a>
@@ -865,7 +865,7 @@ export function FileManager() {
             <img src={getProxyUrl(previewFile.id, previewFile.name)} alt={previewFile.name} className="max-w-full max-h-[80vh] object-contain rounded-xl"/>
             <div className="flex items-center gap-4">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{previewFile.name}</p>
-              <a onClick={() => handleDownloadClick(previewFile)}
+              <button onClick={() => handleDownloadClick(previewFile)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all cursor-pointer">
                 <Download size={16}/> Baixar
               </button>
@@ -890,7 +890,7 @@ export function FileManager() {
             </div>
             <div className="flex items-center justify-between">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{embedFile.name}</p>
-              <a onClick={() => handleDownloadClick(embedFile)}
+              <button onClick={() => handleDownloadClick(embedFile)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all cursor-pointer">
                 <Download size={16}/> Baixar
               </button>
