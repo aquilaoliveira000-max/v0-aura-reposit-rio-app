@@ -141,8 +141,8 @@ export function FileManager() {
   const [embedFile, setEmbedFile] = useState<DriveItem | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [zipProgress, setZipProgress] = useState<ZipProgress | null>(null)
-  const [downloadConfirm, setDownloadConfirm] = useState<{ id: string; name: string; size?: number } | null>(null)
   const uploadXhrs = useRef<Map<string, XMLHttpRequest>>(new Map())
+  const [downloadConfirm, setDownloadConfirm] = useState<{ id: string; name: string; size?: number } | null>(null)
   const [allFolders, setAllFolders] = useState<{id: string; name: string; path: string}[]>([])
   const [loadingFolders, setLoadingFolders] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -158,7 +158,7 @@ export function FileManager() {
     return () => clearInterval(interval)
   }, [router])
 
-  const loadItems = async (path: string, showLoader = true) => {
+  const loadItems = async (path: string, showLoader = true): Promise<void> => {
     if (showLoader) setInitialLoading(true)
     try {
       const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`)
@@ -285,10 +285,14 @@ export function FileManager() {
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
       setTimeout(() => {
         setStagedFiles(prev => prev.filter(f => f.id !== staged.id))
-        loadItems(currentPathRef.current, false)
+        loadItems(currentPathRef.current, false).catch(() => {})
       }, 1500)
     } catch (err: any) {
-      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
+      // Se o arquivo foi enviado (status 200/201 recebido) não mostra erro
+      const isDone = stagedFiles.find(f => f.id === staged.id)?.progress === 100
+      if (!isDone) {
+        setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
+      }
     }
   }
 
@@ -354,25 +358,24 @@ export function FileManager() {
     loadItems(currentPath, false)
   }
 
-  const handleDownloadClick = (item: DriveItem) => {
-    setDownloadConfirm({ id: item.id, name: item.name, size: item.size })
-  }
-
-  const confirmDownload = () => {
-    if (!downloadConfirm) return
-    const url = `https://drive.usercontent.google.com/download?id=${downloadConfirm.id}&export=download&confirm=t`
-    const a = document.createElement('a')
-    a.href = url
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    setDownloadConfirm(null)
-  }
-
   const cancelUpload = (id: string) => {
     const xhr = uploadXhrs.current.get(id)
     if (xhr) { xhr.abort(); uploadXhrs.current.delete(id) }
     setStagedFiles(prev => prev.filter(f => f.id !== id))
+  }
+
+  const triggerDriveDownload = (id: string) => {
+    // Iframe invisível — dispara o download do Drive sem mostrar a página
+    const iframe = document.createElement('iframe')
+    iframe.style.display = 'none'
+    iframe.src = `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`
+    document.body.appendChild(iframe)
+    setTimeout(() => document.body.removeChild(iframe), 10000)
+    setDownloadConfirm(null)
+  }
+
+  const handleDownloadClick = (item: DriveItem) => {
+    setDownloadConfirm({ id: item.id, name: item.name, size: item.size })
   }
 
   const handleDownloadFolder = async (folder: DriveItem) => {
@@ -412,9 +415,7 @@ export function FileManager() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
         {item.type === 'file' && (
-          <DropdownMenuItem onClick={() => handleDownloadClick(item)} className="flex items-center gap-2">
-            <Download size={14}/> Baixar
-          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleDownloadClick(item)} className="flex items-center gap-2"><Download size={14}/> Baixar</DropdownMenuItem>
         )}
         {item.type === 'folder' && (
           <DropdownMenuItem onClick={() => handleDownloadFolder(item)} className="flex items-center gap-2">
@@ -500,7 +501,7 @@ export function FileManager() {
         {!selectionMode && (
           <div className="absolute bottom-2 right-2" onClick={e => e.stopPropagation()}>
             {item.type === 'file' ? (
-              <button onClick={() => handleDownloadClick(item)}
+              <button href={getDownloadUrl(item.id, item.name)}
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
                 title="Baixar">
                 <Download size={13} className="text-[#3b82f6]"/>
@@ -866,7 +867,7 @@ export function FileManager() {
             <div className="flex items-center gap-4">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{previewFile.name}</p>
               <button onClick={() => handleDownloadClick(previewFile)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all cursor-pointer">
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all">
                 <Download size={16}/> Baixar
               </button>
             </div>
@@ -891,7 +892,7 @@ export function FileManager() {
             <div className="flex items-center justify-between">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{embedFile.name}</p>
               <button onClick={() => handleDownloadClick(embedFile)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all cursor-pointer">
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all">
                 <Download size={16}/> Baixar
               </button>
             </div>
@@ -920,27 +921,27 @@ export function FileManager() {
         </div>
       )}
 
-      {/* MODAL CONFIRMAÇÃO DOWNLOAD */}
+      {/* MODAL DOWNLOAD — iframe invisível dispara download do Drive */}
       {downloadConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setDownloadConfirm(null)}>
           <div className="bg-[#13131a] border border-[#2a2a3a] rounded-2xl p-8 w-[90vw] max-w-sm flex flex-col gap-5" onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col gap-2">
-              <p className="text-white font-medium text-base truncate">{downloadConfirm.name}</p>
-              {downloadConfirm.size && (
-                <p className="text-[#888899] text-sm">{formatFileSize(downloadConfirm.size)}</p>
-              )}
-              <p className="text-[#888899] text-sm mt-1">Confirmar download deste arquivo?</p>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{background:'linear-gradient(135deg,#3b82f620,#7c3aed20,#06b6d420)'}}>
+              <Download size={26} style={{color:'#7c3aed'}}/>
+            </div>
+            <div className="text-center flex flex-col gap-1">
+              <p className="text-white font-medium truncate">{downloadConfirm.name}</p>
+              {downloadConfirm.size && <p className="text-[#888899] text-sm">{formatFileSize(downloadConfirm.size)}</p>}
+              <p className="text-[#888899] text-sm mt-1">Arquivo grande — deseja baixar mesmo assim?</p>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDownloadConfirm(null)}
                 className="flex-1 py-3 rounded-xl border border-[#2a2a3a] text-[#888899] text-sm hover:bg-[#1a1a24] transition-colors">
                 Cancelar
               </button>
-              <button onClick={confirmDownload}
-                className="flex-1 py-3 rounded-xl text-white text-sm font-medium transition-all"
+              <button onClick={() => triggerDriveDownload(downloadConfirm.id)}
+                className="flex-1 py-3 rounded-xl text-white text-sm font-medium transition-all flex items-center justify-center gap-2"
                 style={{background:'linear-gradient(135deg,#3b82f6,#7c3aed,#06b6d4)'}}>
-                <Download size={16} className="inline mr-2"/>
-                Baixar
+                <Download size={16}/> Baixar
               </button>
             </div>
           </div>
