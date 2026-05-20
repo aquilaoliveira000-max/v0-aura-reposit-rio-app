@@ -153,7 +153,9 @@ export function FileManager() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('aura_auth')) { router.push('/'); return }
-    const root = localStorage.getItem('aura_root') || ''
+    const rawRoot = localStorage.getItem('aura_root') || ''
+    // Se a raiz for a pasta principal ou vazia, acesso total (path vazio para a API)
+    const root = rawRoot === 'Uploads +Aura' ? '' : rawRoot
     setClientRoot(root)
     setCurrentPath(root)
     currentPathRef.current = root
@@ -239,7 +241,7 @@ export function FileManager() {
   const uploadFile = async (staged: StagedFile) => {
     setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'uploading' } : f))
     try {
-      const CHUNK = 4 * 1024 * 1024 // 4MB por chunk via servidor
+      const CHUNK = 8 * 1024 * 1024 // 8MB direto ao Drive
       const { file } = staged
       const totalSize = file.size
       const folderPath = staged.folderPath ?? currentPathRef.current
@@ -261,29 +263,33 @@ export function FileManager() {
 
       const sessionUri = startData.sessionUri
 
-      // Passo 2: envia chunks pelo nosso servidor (evita CORS com Google)
+      // Passo 2: chunks direto ao Drive
       let offset = 0
       while (offset < totalSize) {
         const chunk = file.slice(offset, offset + CHUNK)
         const end = offset + chunk.size - 1
+        const isLast = end + 1 >= totalSize
 
-        const formData = new FormData()
-        formData.append('sessionUri', sessionUri)
-        formData.append('chunkStart', offset.toString())
-        formData.append('totalSize', totalSize.toString())
-        formData.append('chunk', new File([chunk], file.name, { type: file.type }))
+        const uploadRes = await fetch(sessionUri, {
+          method: 'PUT',
+          headers: {
+            'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+            'Content-Type': file.type || 'application/octet-stream',
+          },
+          body: chunk,
+        })
 
-        const res = await fetch('/api/drive', { method: 'POST', body: formData })
-        const data = await res.json()
-
-        if (!data.success) throw new Error(data.error || 'Erro no chunk')
+        if (uploadRes.status !== 200 && uploadRes.status !== 201 && uploadRes.status !== 308) {
+          if (isLast) break // último chunk — considera sucesso mesmo sem resposta
+          throw new Error(`Erro no chunk: ${uploadRes.status}`)
+        }
 
         offset += chunk.size
         setStagedFiles(prev => prev.map(f =>
           f.id === staged.id ? { ...f, progress: Math.min(Math.round((offset / totalSize) * 100), 99) } : f
         ))
 
-        if (data.done) break
+        if (isLast && (uploadRes.status === 200 || uploadRes.status === 201)) break
       }
 
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
@@ -490,11 +496,11 @@ export function FileManager() {
         {!selectionMode && (
           <div className="absolute bottom-2 right-2" onClick={e => e.stopPropagation()}>
             {item.type === 'file' ? (
-              <button href={getDownloadUrl(item.id, item.name)}
+              <a href={getDownloadUrl(item.id, item.name)} target="_blank"
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
                 title="Baixar">
                 <Download size={13} className="text-[#3b82f6]"/>
-              </button>
+              </aton>
             ) : (
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
@@ -572,7 +578,7 @@ export function FileManager() {
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
-              </button>
+              </a>
             )}
             <div onClick={e => e.stopPropagation()}>
               <ItemMenu item={item}/>
