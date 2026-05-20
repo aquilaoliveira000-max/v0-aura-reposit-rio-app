@@ -909,32 +909,6 @@ export function FileManager() {
           </div>
         </div>
       )}
-      {downloadConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setDownloadConfirm(null)}>
-          <div className="bg-[#13131a] border border-[#2a2a3a] rounded-2xl p-8 w-[90vw] max-w-sm flex flex-col gap-5" onClick={e => e.stopPropagation()}>
-            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{background:'linear-gradient(135deg,#3b82f620,#7c3aed20,#06b6d420)'}}>
-              <Download size={26} style={{color:'#7c3aed'}}/>
-            </div>
-            <div className="text-center flex flex-col gap-1">
-              <p className="text-white font-medium truncate">{downloadConfirm.name}</p>
-              {downloadConfirm.size && <p className="text-[#888899] text-sm">{formatFileSize(downloadConfirm.size)}</p>}
-              <p className="text-[#888899] text-sm mt-1">Arquivo grande — deseja baixar mesmo assim?</p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setDownloadConfirm(null)}
-                className="flex-1 py-3 rounded-xl border border-[#2a2a3a] text-[#888899] text-sm hover:bg-[#1a1a24] transition-colors">
-                Cancelar
-              </button>
-              <button onClick={() => triggerDriveDownload(downloadConfirm.id)}
-                className="flex-1 py-3 rounded-xl text-white text-sm font-medium transition-all flex items-center justify-center gap-2"
-                style={{background:'linear-gradient(135deg,#3b82f6,#7c3aed,#06b6d4)'}}>
-                <Download size={16}/> Baixar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MODAIS */}
       <Dialog open={showNewFolderModal} onOpenChange={setShowNewFolderModal}>
         <DialogContent className="bg-[#13131a] border-[#2a2a3a] mx-4 rounded-2xl">
