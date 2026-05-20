@@ -270,17 +270,25 @@ export function FileManager() {
         const end = offset + chunk.size - 1
         const isLast = end + 1 >= totalSize
 
-        const uploadRes = await fetch(sessionUri, {
-          method: 'PUT',
-          headers: {
-            'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
-            'Content-Type': file.type || 'application/octet-stream',
-          },
-          body: chunk,
-        })
+        let uploadRes: Response | null = null
+        try {
+          uploadRes = await fetch(sessionUri, {
+            method: 'PUT',
+            headers: {
+              'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+              'Content-Type': file.type || 'application/octet-stream',
+            },
+            body: chunk,
+          })
+        } catch {
+          // "Failed to fetch" no último chunk é normal — o Drive fecha a conexão
+          // após confirmar o upload mas antes de enviar resposta completa
+          if (isLast) break
+          throw new Error('Falha de rede durante o upload')
+        }
 
         if (uploadRes.status !== 200 && uploadRes.status !== 201 && uploadRes.status !== 308) {
-          if (isLast) break // último chunk — considera sucesso mesmo sem resposta
+          if (isLast) break
           throw new Error(`Erro no chunk: ${uploadRes.status}`)
         }
 
