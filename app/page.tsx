@@ -56,7 +56,7 @@ export default function LandingPage() {
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
             className="w-full rounded-lg px-4 py-3 text-white placeholder-[#888899] focus:outline-none text-sm"
             style={{ background: '#0d0d12', border: '1px solid #1e1e2a' }}/>
-          <input type="password" placeholder="Senha" autoComplete="new-password" value={pass}
+          <input type="text" placeholder="Senha" autoComplete="off" style={{ WebkitTextSecurity: "disc" } as any} value={pass}
             onChange={e => setPass(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
             className="w-full rounded-lg px-4 py-3 text-white placeholder-[#888899] focus:outline-none text-sm"
