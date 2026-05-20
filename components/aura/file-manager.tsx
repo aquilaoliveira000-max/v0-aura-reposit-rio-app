@@ -140,9 +140,9 @@ export function FileManager() {
   const [previewFile, setPreviewFile] = useState<DriveItem | null>(null)
   const [embedFile, setEmbedFile] = useState<DriveItem | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [clientRoot, setClientRoot] = useState('')
   const [zipProgress, setZipProgress] = useState<ZipProgress | null>(null)
   const uploadXhrs = useRef<Map<string, XMLHttpRequest>>(new Map())
-  const [downloadConfirm, setDownloadConfirm] = useState<{ id: string; name: string; size?: number } | null>(null)
   const [allFolders, setAllFolders] = useState<{id: string; name: string; path: string}[]>([])
   const [loadingFolders, setLoadingFolders] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -153,7 +153,12 @@ export function FileManager() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('aura_auth')) { router.push('/'); return }
-    loadItems('', true)
+    const root = localStorage.getItem('aura_root') || ''
+    setClientRoot(root)
+    setCurrentPath(root)
+    currentPathRef.current = root
+    if (root) setBreadcrumbs([{ name: 'Meus Arquivos', path: root }])
+    loadItems(root, true)
     const interval = setInterval(() => loadItems(currentPathRef.current, false), 30000)
     return () => clearInterval(interval)
   }, [router])
@@ -178,6 +183,8 @@ export function FileManager() {
   }
 
   const navigateToBreadcrumb = (index: number) => {
+    // Não permite navegar acima da raiz do cliente
+    if (index === 0 && clientRoot) return
     const crumb = breadcrumbs[index]
     setBreadcrumbs(breadcrumbs.slice(0, index + 1)); setCurrentPath(crumb.path)
     setSelectedIds(new Set()); setSelectionMode(false); loadItems(crumb.path, true)
@@ -232,7 +239,7 @@ export function FileManager() {
   const uploadFile = async (staged: StagedFile) => {
     setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'uploading' } : f))
     try {
-      const CHUNK = 8 * 1024 * 1024 // 8MB por chunk direto ao Drive
+      const CHUNK = 4 * 1024 * 1024 // 4MB por chunk via servidor
       const { file } = staged
       const totalSize = file.size
       const folderPath = staged.folderPath ?? currentPathRef.current
@@ -254,45 +261,39 @@ export function FileManager() {
 
       const sessionUri = startData.sessionUri
 
-      // Passo 2: envia chunks DIRETO ao Drive (sem passar pelo Vercel)
+      // Passo 2: envia chunks pelo nosso servidor (evita CORS com Google)
       let offset = 0
       while (offset < totalSize) {
         const chunk = file.slice(offset, offset + CHUNK)
         const end = offset + chunk.size - 1
-        const isLast = end + 1 >= totalSize
 
-        const uploadRes = await fetch(sessionUri, {
-          method: 'PUT',
-          headers: {
-            'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
-            'Content-Type': file.type || 'application/octet-stream',
-          },
-          body: chunk,
-        })
+        const formData = new FormData()
+        formData.append('sessionUri', sessionUri)
+        formData.append('chunkStart', offset.toString())
+        formData.append('totalSize', totalSize.toString())
+        formData.append('chunk', new File([chunk], file.name, { type: file.type }))
 
-        if (uploadRes.status !== 200 && uploadRes.status !== 201 && uploadRes.status !== 308) {
-          throw new Error(`Erro no chunk: ${uploadRes.status}`)
-        }
+        const res = await fetch('/api/drive', { method: 'POST', body: formData })
+        const data = await res.json()
+
+        if (!data.success) throw new Error(data.error || 'Erro no chunk')
 
         offset += chunk.size
         setStagedFiles(prev => prev.map(f =>
           f.id === staged.id ? { ...f, progress: Math.min(Math.round((offset / totalSize) * 100), 99) } : f
         ))
 
-        if (isLast && (uploadRes.status === 200 || uploadRes.status === 201)) break
+        if (data.done) break
       }
 
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'done', progress: 100 } : f))
       setTimeout(() => {
         setStagedFiles(prev => prev.filter(f => f.id !== staged.id))
-        loadItems(currentPathRef.current, false).catch(() => {})
+        loadItems(currentPathRef.current, false)
       }, 1500)
     } catch (err: any) {
-      // Se o arquivo foi enviado (status 200/201 recebido) não mostra erro
-      const isDone = stagedFiles.find(f => f.id === staged.id)?.progress === 100
-      if (!isDone) {
-        setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
-      }
+      if (err.name === 'AbortError') return // cancelado pelo usuário
+      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
     }
   }
 
@@ -364,19 +365,7 @@ export function FileManager() {
     setStagedFiles(prev => prev.filter(f => f.id !== id))
   }
 
-  const triggerDriveDownload = (id: string) => {
-    // Iframe invisível — dispara o download do Drive sem mostrar a página
-    const iframe = document.createElement('iframe')
-    iframe.style.display = 'none'
-    iframe.src = `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`
-    document.body.appendChild(iframe)
-    setTimeout(() => document.body.removeChild(iframe), 10000)
-    setDownloadConfirm(null)
-  }
 
-  const handleDownloadClick = (item: DriveItem) => {
-    setDownloadConfirm({ id: item.id, name: item.name, size: item.size })
-  }
 
   const handleDownloadFolder = async (folder: DriveItem) => {
     setZipProgress({ current: 0, total: 1, name: 'Preparando...' })
@@ -415,7 +404,7 @@ export function FileManager() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="bg-[#18181c] border-[#2a2a32]">
         {item.type === 'file' && (
-          <DropdownMenuItem onClick={() => handleDownloadClick(item)} className="flex items-center gap-2"><Download size={14}/> Baixar</DropdownMenuItem>
+          <DropdownMenuItem asChild><a href={getDownloadUrl(item.id, item.name)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2"><Download size={14}/> Baixar</a></DropdownMenuItem>
         )}
         {item.type === 'folder' && (
           <DropdownMenuItem onClick={() => handleDownloadFolder(item)} className="flex items-center gap-2">
@@ -575,10 +564,10 @@ export function FileManager() {
         {!selectionMode && !isDeleting && !isMoving && (
           <div className="flex items-center gap-1 shrink-0">
             {item.type === 'file' ? (
-              <button onClick={() => handleDownloadClick(item)}
+              <a href={getDownloadUrl(item.id, item.name)} target="_blank" rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
-              </button>
+              </a>
             ) : (
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
@@ -866,10 +855,10 @@ export function FileManager() {
             <img src={getProxyUrl(previewFile.id, previewFile.name)} alt={previewFile.name} className="max-w-full max-h-[80vh] object-contain rounded-xl"/>
             <div className="flex items-center gap-4">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{previewFile.name}</p>
-              <button onClick={() => handleDownloadClick(previewFile)}
+              <a href={getDownloadUrl(previewFile.id, previewFile.name)} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all">
                 <Download size={16}/> Baixar
-              </button>
+              </a>
             </div>
           </div>
         </div>
@@ -891,10 +880,10 @@ export function FileManager() {
             </div>
             <div className="flex items-center justify-between">
               <p className="text-white text-sm truncate max-w-[200px] md:max-w-[400px]">{embedFile.name}</p>
-              <button onClick={() => handleDownloadClick(embedFile)}
+              <a href={getDownloadUrl(embedFile.id, embedFile.name)} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1a1a24] border border-[#2a2a3a] text-[#3b82f6] text-sm hover:border-[#3b82f6] transition-all">
                 <Download size={16}/> Baixar
-              </button>
+              </a>
             </div>
           </div>
         </div>
@@ -920,8 +909,6 @@ export function FileManager() {
           </div>
         </div>
       )}
-
-      {/* MODAL DOWNLOAD — iframe invisível dispara download do Drive */}
       {downloadConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setDownloadConfirm(null)}>
           <div className="bg-[#13131a] border border-[#2a2a3a] rounded-2xl p-8 w-[90vw] max-w-sm flex flex-col gap-5" onClick={e => e.stopPropagation()}>
