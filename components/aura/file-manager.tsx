@@ -505,7 +505,7 @@ export function FileManager() {
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
                 title="Baixar">
                 <Download size={13} className="text-[#3b82f6]"/>
-              </aton>
+              </a>
             ) : (
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
