@@ -50,7 +50,7 @@ async function fetchAllFolders(
   depth = 0
 ) {
   if (depth > 4) return // limite de profundidade
-  const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`)
+  const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`, { cache: 'no-store' })
   const data = await res.json()
   if (!data.success) return
   for (const f of data.folders) {
@@ -62,7 +62,7 @@ async function fetchAllFolders(
 }
 
 async function listFolderContents(folderPath: string): Promise<DriveItem[]> {
-  const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(folderPath)}`)
+  const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(folderPath)}`, { cache: 'no-store' })
   const data = await res.json()
   if (!data.success) return []
   return [
@@ -168,7 +168,7 @@ export function FileManager() {
   const loadItems = async (path: string, showLoader = true): Promise<void> => {
     if (showLoader) setInitialLoading(true)
     try {
-      const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`)
+      const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}&_t=${Date.now()}`, { cache: 'no-store' })
       const data = await res.json()
       if (data.success) {
         setItems([

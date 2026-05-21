@@ -103,7 +103,12 @@ export async function GET(req: NextRequest) {
     const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
     const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
     const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime }))
-    return NextResponse.json({ success: true, folders, files })
+    return NextResponse.json({ success: true, folders, files }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      }
+    })
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
