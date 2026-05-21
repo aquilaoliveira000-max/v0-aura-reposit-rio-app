@@ -176,15 +176,7 @@ export function FileManager() {
           ...data.files.map((f: any) => ({ ...f, type: 'file' as const }))
         ])
       } else {
-        // Se token expirou ou erro de OAuth, força novo login
-        const msg = data.error || ''
-        if (msg.includes('token') || msg.includes('OAuth') || msg.includes('401') || msg.includes('invalid_grant')) {
-          localStorage.removeItem('aura_auth')
-          localStorage.removeItem('aura_root')
-          router.push('/')
-        } else {
-          console.error('[Drive] Erro ao listar:', msg)
-        }
+        console.error('[Drive] Erro ao listar:', data.error || 'erro desconhecido')
       }
     } catch (err) {
       console.error('[Drive] Falha de rede:', err)
