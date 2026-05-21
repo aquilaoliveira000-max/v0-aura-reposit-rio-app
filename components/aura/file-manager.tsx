@@ -153,13 +153,8 @@ export function FileManager() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('aura_auth')) { router.push('/'); return }
-    // Se não tem aura_root, é sessão antiga — força novo login
-    if (typeof window !== 'undefined' && localStorage.getItem('aura_root') === null) {
-      localStorage.removeItem('aura_auth')
-      router.push('/')
-      return
-    }
     const rawRoot = localStorage.getItem('aura_root') || ''
+    // Se a raiz for a pasta principal ou vazia, acesso total (path vazio para a API)
     const root = rawRoot === 'Uploads +Aura' ? '' : rawRoot
     setClientRoot(root)
     setCurrentPath(root)
@@ -175,11 +170,25 @@ export function FileManager() {
     try {
       const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}`)
       const data = await res.json()
-      if (data.success) setItems([
-        ...data.folders.map((f: any) => ({ ...f, type: 'folder' as const })),
-        ...data.files.map((f: any) => ({ ...f, type: 'file' as const }))
-      ])
-    } catch {}
+      if (data.success) {
+        setItems([
+          ...data.folders.map((f: any) => ({ ...f, type: 'folder' as const })),
+          ...data.files.map((f: any) => ({ ...f, type: 'file' as const }))
+        ])
+      } else {
+        // Se token expirou ou erro de OAuth, força novo login
+        const msg = data.error || ''
+        if (msg.includes('token') || msg.includes('OAuth') || msg.includes('401') || msg.includes('invalid_grant')) {
+          localStorage.removeItem('aura_auth')
+          localStorage.removeItem('aura_root')
+          router.push('/')
+        } else {
+          console.error('[Drive] Erro ao listar:', msg)
+        }
+      }
+    } catch (err) {
+      console.error('[Drive] Falha de rede:', err)
+    }
     if (showLoader) setInitialLoading(false)
   }
 
@@ -275,17 +284,25 @@ export function FileManager() {
         const end = offset + chunk.size - 1
         const isLast = end + 1 >= totalSize
 
-        const uploadRes = await fetch(sessionUri, {
-          method: 'PUT',
-          headers: {
-            'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
-            'Content-Type': file.type || 'application/octet-stream',
-          },
-          body: chunk,
-        })
+        let uploadRes: Response | null = null
+        try {
+          uploadRes = await fetch(sessionUri, {
+            method: 'PUT',
+            headers: {
+              'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+              'Content-Type': file.type || 'application/octet-stream',
+            },
+            body: chunk,
+          })
+        } catch {
+          // "Failed to fetch" no último chunk é normal — o Drive fecha a conexão
+          // após confirmar o upload mas antes de enviar resposta completa
+          if (isLast) break
+          throw new Error('Falha de rede durante o upload')
+        }
 
         if (uploadRes.status !== 200 && uploadRes.status !== 201 && uploadRes.status !== 308) {
-          if (isLast) break // último chunk — considera sucesso mesmo sem resposta
+          if (isLast) break
           throw new Error(`Erro no chunk: ${uploadRes.status}`)
         }
 
@@ -583,7 +600,7 @@ export function FileManager() {
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
-              </a>
+              </button>
             )}
             <div onClick={e => e.stopPropagation()}>
               <ItemMenu item={item}/>

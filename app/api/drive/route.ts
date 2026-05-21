@@ -47,6 +47,12 @@ async function driveGet(path: string, token: string) {
   const res = await fetch(`https://www.googleapis.com/drive/v3/${path}`, {
     headers: { Authorization: `Bearer ${token}` }
   })
+  if (res.status === 401) {
+    // Token inválido — invalida cache para forçar renovação na próxima chamada
+    _cachedToken = null
+    _tokenExpiry = 0
+    throw new Error('Token OAuth expirado ou inválido (401). Tente novamente.')
+  }
   return res.json()
 }
 
