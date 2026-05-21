@@ -153,8 +153,13 @@ export function FileManager() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('aura_auth')) { router.push('/'); return }
+    // Se não tem aura_root, é sessão antiga — força novo login
+    if (typeof window !== 'undefined' && localStorage.getItem('aura_root') === null) {
+      localStorage.removeItem('aura_auth')
+      router.push('/')
+      return
+    }
     const rawRoot = localStorage.getItem('aura_root') || ''
-    // Se a raiz for a pasta principal ou vazia, acesso total (path vazio para a API)
     const root = rawRoot === 'Uploads +Aura' ? '' : rawRoot
     setClientRoot(root)
     setCurrentPath(root)
@@ -270,25 +275,17 @@ export function FileManager() {
         const end = offset + chunk.size - 1
         const isLast = end + 1 >= totalSize
 
-        let uploadRes: Response | null = null
-        try {
-          uploadRes = await fetch(sessionUri, {
-            method: 'PUT',
-            headers: {
-              'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
-              'Content-Type': file.type || 'application/octet-stream',
-            },
-            body: chunk,
-          })
-        } catch {
-          // "Failed to fetch" no último chunk é normal — o Drive fecha a conexão
-          // após confirmar o upload mas antes de enviar resposta completa
-          if (isLast) break
-          throw new Error('Falha de rede durante o upload')
-        }
+        const uploadRes = await fetch(sessionUri, {
+          method: 'PUT',
+          headers: {
+            'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+            'Content-Type': file.type || 'application/octet-stream',
+          },
+          body: chunk,
+        })
 
         if (uploadRes.status !== 200 && uploadRes.status !== 201 && uploadRes.status !== 308) {
-          if (isLast) break
+          if (isLast) break // último chunk — considera sucesso mesmo sem resposta
           throw new Error(`Erro no chunk: ${uploadRes.status}`)
         }
 
@@ -508,7 +505,7 @@ export function FileManager() {
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
                 title="Baixar">
                 <Download size={13} className="text-[#3b82f6]"/>
-              </a>
+              </aton>
             ) : (
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-7 h-7 rounded-full flex items-center justify-center bg-[#0d0d12] border border-[#2a2a3a] hover:border-[#3b82f6] hover:bg-[#3b82f6]/20 transition-all opacity-0 group-hover:opacity-100"
@@ -586,7 +583,7 @@ export function FileManager() {
               <button onClick={() => handleDownloadFolder(item)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:bg-[#1a1a24]">
                 <Download size={20} className="text-[#3b82f6]"/>
-              </button>
+              </a>
             )}
             <div onClick={e => e.stopPropagation()}>
               <ItemMenu item={item}/>
