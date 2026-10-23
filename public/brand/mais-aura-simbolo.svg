@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="103 495 360 360" role="img" aria-label="+Aura símbolo"><title>+Aura símbolo</title>
+<defs>
+  <filter id="b40" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="40"/></filter>
+  <filter id="b18" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="18"/></filter>
+  <filter id="b8" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="8"/></filter>
+  <filter id="b3" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter>
+  <filter id="b1" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.2"/></filter>
+  <linearGradient id="feixe" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#CF4037" stop-opacity="0"/>
+    <stop offset="0.18" stop-color="#E0453F" stop-opacity="0.9"/>
+    <stop offset="0.38" stop-color="#F051CF"/>
+    <stop offset="0.58" stop-color="#9B4BF0"/>
+    <stop offset="0.8" stop-color="#4A58F6" stop-opacity="0.75"/>
+    <stop offset="1" stop-color="#4A58F6" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="nucleo" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+    <stop offset="0.35" stop-color="#FFD9F4"/>
+    <stop offset="0.55" stop-color="#FFFFFF"/>
+    <stop offset="1" stop-color="#C9B8FF" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="faisca" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#4A58F6" stop-opacity="0"/>
+    <stop offset="0.6" stop-color="#9FB4FF"/>
+    <stop offset="1" stop-color="#FFFFFF"/>
+  </linearGradient>
+</defs>
+<g aria-hidden="true">
+  <ellipse cx="320" cy="630" rx="70" ry="34" fill="#3B2AE0" opacity="0.45" filter="url(#b40)" transform="rotate(-44 320 630)"/>
+  <ellipse cx="282" cy="762" rx="38" ry="24" fill="#E0453F" opacity="0.8" filter="url(#b18)"/>
+  <ellipse cx="330" cy="652" rx="165" ry="14" fill="url(#feixe)" opacity="0.9" filter="url(#b8)" transform="rotate(-44 330 652)"/>
+  <ellipse cx="330" cy="652" rx="130" ry="4" fill="url(#feixe)" filter="url(#b3)" transform="rotate(-44 330 652)"/>
+  <ellipse cx="372" cy="662" rx="70" ry="2.2" fill="url(#nucleo)" filter="url(#b1)" transform="rotate(-44 372 662)"/>
+  <g filter="url(#b18)" opacity="0.85"><rect x="195.0" y="666.25" width="177.0" height="17.5" fill="#5C7BFF" /><rect x="274.75" y="586.5" width="17.5" height="177.0" fill="#5C7BFF" /></g>
+  <g filter="url(#b3)"><rect x="195.0" y="666.25" width="177.0" height="17.5" fill="#BFE9FF" /><rect x="274.75" y="586.5" width="17.5" height="177.0" fill="#BFE9FF" /></g>
+  <ellipse cx="200" cy="675.0" rx="70" ry="2.6" fill="url(#faisca)" filter="url(#b1)"/>
+  <ellipse cx="196" cy="675.0" rx="10" ry="10" fill="#9FB4FF" opacity="0.7" filter="url(#b8)"/>
+</g><rect x="195.0" y="666.25" width="177.0" height="17.5" fill="#F4FBFF" /><rect x="274.75" y="586.5" width="17.5" height="177.0" fill="#F4FBFF" /></svg>

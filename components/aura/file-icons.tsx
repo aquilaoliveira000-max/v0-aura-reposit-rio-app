@@ -1,15 +1,7 @@
 'use client'
 
 import { AuraFile } from '@/lib/aura-types'
-import { 
-  FileText, 
-  Image, 
-  Video, 
-  Music, 
-  FileArchive, 
-  File,
-  Folder
-} from 'lucide-react'
+import { FileText, Image, Video, Music, FileArchive, File, Folder, FileSpreadsheet } from 'lucide-react'
 
 interface FileIconProps {
   type: AuraFile['type'] | 'folder'
@@ -17,25 +9,21 @@ interface FileIconProps {
   className?: string
 }
 
+/** Cor por tipo, tirada do espectro da marca e dos tons de estado. */
+const COR: Record<FileIconProps['type'], string> = {
+  folder: 'var(--brand-text)',
+  pdf: 'var(--danger)',
+  image: 'var(--aura-3)',
+  video: 'var(--aura-1)',
+  audio: 'var(--info)',
+  document: 'var(--info)',
+  archive: 'var(--warning)',
+  other: 'var(--text-3)',
+}
+
+const ICONE = { folder: Folder, pdf: FileText, image: Image, video: Video, audio: Music, document: FileSpreadsheet, archive: FileArchive, other: File }
+
 export function FileIcon({ type, size = 24, className = '' }: FileIconProps) {
-  const iconProps = { size, className }
-  
-  switch (type) {
-    case 'folder':
-      return <Folder {...iconProps} className={`text-cosmic-blue ${className}`} />
-    case 'pdf':
-      return <FileText {...iconProps} className={`text-cosmic-pink ${className}`} />
-    case 'image':
-      return <Image {...iconProps} className={`text-cosmic-violet ${className}`} />
-    case 'video':
-      return <Video {...iconProps} className={`text-cosmic-orange ${className}`} />
-    case 'audio':
-      return <Music {...iconProps} className={`text-cosmic-cyan ${className}`} />
-    case 'document':
-      return <FileText {...iconProps} className={`text-cosmic-blue ${className}`} />
-    case 'archive':
-      return <FileArchive {...iconProps} className={`text-cosmic-orange ${className}`} />
-    default:
-      return <File {...iconProps} className={`text-muted-foreground ${className}`} />
-  }
+  const Icone = ICONE[type] ?? File
+  return <Icone size={size} strokeWidth={1.75} className={className} style={{ color: COR[type] ?? COR.other }} aria-hidden />
 }

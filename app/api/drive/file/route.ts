@@ -1,3 +1,5 @@
+import { itemAutorizado, lerSessao } from '@/lib/sessao'
+
 export const runtime = 'edge'
 
 async function getToken(): Promise<string> {
@@ -23,6 +25,10 @@ export async function GET(req: Request) {
   const name = searchParams.get('name') || 'arquivo'
 
   if (!fileId) return new Response('ID não informado', { status: 400 })
+  // Só entrega arquivo que o próprio cliente recebeu na listagem da pasta dele.
+  const sessao = await lerSessao(req)
+  if (!sessao) return new Response('Sessão expirada', { status: 401 })
+  if (!(await itemAutorizado(sessao, fileId, searchParams.get('sig')))) return new Response('Sem acesso a este arquivo', { status: 403 })
 
   try {
     const token = await getToken()
@@ -52,7 +58,7 @@ export async function GET(req: Request) {
     if (contentRange) responseHeaders['Content-Range'] = contentRange
 
     if (forceDownload) {
-      responseHeaders['Content-Disposition'] = `attachment; filename="${encodeURIComponent(name)}"`
+      responseHeaders['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(name)}`
     }
 
     // Streaming direto — Edge Runtime mantém a conexão aberta enquanto os dados chegam

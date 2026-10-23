@@ -3,56 +3,117 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Tokens do ecossistema +Aura (os mesmos do +Aura Hospeda e do CRM).
+ * A cor da marca se chama --brand aqui porque os componentes prontos (components/ui) já usam
+ * --accent com outro sentido: o fundo de item em foco nos menus.
+ */
 :root {
-  /* +Aura Cosmic Dark Theme */
-  --background: #111114;
-  --foreground: #ffffff;
-  --card: #18181c;
-  --card-foreground: #ffffff;
-  --popover: #18181c;
-  --popover-foreground: #ffffff;
-  --primary: #3b82f6;
-  --primary-foreground: #ffffff;
-  --secondary: #1e1e24;
-  --secondary-foreground: #ffffff;
-  --muted: #18181c;
-  --muted-foreground: #888899;
-  --accent: #7c3aed;
-  --accent-foreground: #ffffff;
-  --destructive: #ef4444;
+  --brand: #7e39eb;
+  --aura-1: #4a58f6;
+  --aura-2: #7e39eb;
+  --aura-3: #f051cf;
+  --aura-4: #cf4037;
+
+  --brand-hover: color-mix(in oklch, var(--brand) 86%, white);
+  --brand-press: color-mix(in oklch, var(--brand) 84%, black);
+  --brand-soft: color-mix(in oklch, var(--brand) 16%, transparent);
+  --brand-ring: color-mix(in oklch, var(--brand) 70%, white);
+  --brand-text: color-mix(in oklch, var(--brand) 52%, white);
+  --on-brand: #ffffff;
+  --aura-gradient: linear-gradient(120deg, var(--aura-1), var(--aura-2) 38%, var(--aura-3) 72%, var(--aura-4));
+
+  --bg: #050409;
+  --bg-elevated: #0b0914;
+  --surface: color-mix(in oklch, #1a1530 52%, transparent);
+  --surface-solid: #110e1f;
+  --surface-hover: color-mix(in oklch, #2a2248 55%, transparent);
+  --surface-sunken: color-mix(in oklch, #000000 30%, transparent);
+  --glass: color-mix(in oklch, #120f22 62%, transparent);
+  --glass-strong: color-mix(in oklch, #110e1f 92%, transparent);
+  --line: color-mix(in oklch, #c8b8ff 11%, transparent);
+  --line-strong: color-mix(in oklch, #c8b8ff 20%, transparent);
+  --highlight: color-mix(in oklch, white 7%, transparent);
+
+  --text: #f4f2f8;
+  --text-2: #bcb5ca;
+  --text-3: #918a9f;
+
+  --success: #4fd1a1;
+  --warning: #f2b84b;
+  --danger: #f37a72;
+  --info: #7aa7ff;
+  --success-soft: color-mix(in oklch, var(--success) 15%, transparent);
+  --danger-soft: color-mix(in oklch, var(--danger) 15%, transparent);
+
+  --shadow-pop: 0 24px 60px -20px rgb(0 0 0 / 0.8), 0 0 0 1px var(--line);
+  --ambient-1: color-mix(in oklch, var(--aura-1) 22%, transparent);
+  --ambient-2: color-mix(in oklch, var(--aura-3) 12%, transparent);
+  --ambient-3: color-mix(in oklch, var(--aura-2) 14%, transparent);
+
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-panel: 20px;
+  --radius-dialog: 24px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* Nomes usados pelos componentes prontos (components/ui), apontando para a mesma paleta. */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface-solid);
+  --card-foreground: var(--text);
+  --popover: var(--surface-solid);
+  --popover-foreground: var(--text);
+  --primary: var(--brand);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--surface-solid);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-solid);
+  --muted-foreground: var(--text-3);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--text);
+  --destructive: var(--danger);
   --destructive-foreground: #ffffff;
-  --border: #2a2a32;
-  --input: #1e1e24;
-  --ring: #3b82f6;
-  --radius: 0.5rem;
-  
-  /* Cosmic Colors */
-  --cosmic-blue: #3b82f6;
-  --cosmic-violet: #7c3aed;
-  --cosmic-pink: #ec4899;
-  --cosmic-orange: #f97316;
-  --cosmic-cyan: #06b6d4;
-  
-  /* Surfaces */
-  --surface: #18181c;
-  --surface-hover: #1e1e24;
-  --navbar: #000000;
-  --sidebar-bg: #0e0e12;
-  
-  /* Sidebar */
-  --sidebar: #0e0e12;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #3b82f6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e1e24;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #2a2a32;
-  --sidebar-ring: #3b82f6;
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--brand-ring);
+  --radius: 0.625rem;
+
+  color-scheme: dark;
 }
 
 @theme inline {
-  --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
-  --font-display: var(--font-poiret), 'Poiret One', cursive;
+  --font-sans: var(--font-inter), 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-glass: var(--glass);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-press: var(--brand-press);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-text: var(--brand-text);
+  --color-on-brand: var(--on-brand);
+  --color-aura-1: var(--aura-1);
+  --color-aura-2: var(--aura-2);
+  --color-aura-3: var(--aura-3);
+  --color-aura-4: var(--aura-4);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-success-soft: var(--success-soft);
+  --color-danger-soft: var(--danger-soft);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -72,242 +133,174 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  
-  /* Cosmic Colors */
-  --color-cosmic-blue: var(--cosmic-blue);
-  --color-cosmic-violet: var(--cosmic-violet);
-  --color-cosmic-pink: var(--cosmic-pink);
-  --color-cosmic-orange: var(--cosmic-orange);
-  --color-cosmic-cyan: var(--cosmic-cyan);
-  --color-surface: var(--surface);
-  --color-surface-hover: var(--surface-hover);
-  --color-navbar: var(--navbar);
-  --color-sidebar-bg: var(--sidebar-bg);
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
   body {
-    @apply bg-background text-foreground;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--brand) 45%, transparent);
+    color: var(--text);
+  }
+  :focus-visible {
+    outline: 2px solid var(--brand-ring);
+    outline-offset: 2px;
+  }
+  input::placeholder {
+    color: var(--text-3);
+  }
+  button,
+  label[role='button'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
   }
 }
 
-/* Cosmic Gradient Border */
-.cosmic-border {
-  position: relative;
-  background: var(--surface);
-  border-radius: var(--radius);
-}
-
-.cosmic-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-/* Cosmic Button */
-.cosmic-btn {
-  position: relative;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  color: white;
-  cursor: pointer;
-  transition: all 300ms ease;
-  overflow: hidden;
-}
-
-.cosmic-btn::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-.cosmic-btn:hover {
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
-  color: black;
-  transform: scale(1.03);
-  box-shadow: 
-    0 0 20px rgba(59, 130, 246, 0.3),
-    0 0 40px rgba(124, 58, 237, 0.2),
-    0 0 60px rgba(6, 182, 212, 0.1);
-}
-
-.cosmic-btn:hover::before {
-  opacity: 0;
-}
-
-/* Cosmic Gradient Fill Button */
-.cosmic-btn-filled {
-  position: relative;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  cursor: pointer;
-  transition: all 300ms ease;
-  font-weight: 500;
-}
-
-.cosmic-btn-filled:hover {
-  transform: scale(1.03);
-  box-shadow: 
-    0 0 20px rgba(59, 130, 246, 0.4),
-    0 0 40px rgba(124, 58, 237, 0.3),
-    0 0 60px rgba(6, 182, 212, 0.2);
-}
-
-/* Cosmic Spinner */
-@keyframes cosmic-spin {
-  0% {
-    transform: rotate(0deg);
+@layer components {
+  /* Vidro: só para superfícies elevadas (navegação, diálogos, barras). */
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+    box-shadow: inset 0 1px 0 var(--highlight);
   }
-  100% {
-    transform: rotate(360deg);
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: inset 0 1px 0 var(--highlight);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Luz ambiente da marca atrás do conteúdo: é o que dá sentido ao vidro. */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(42rem 30rem at 92% -8%, var(--ambient-1), transparent 70%), radial-gradient(40rem 26rem at 48% 112%, var(--ambient-2), transparent 70%),
+      radial-gradient(28rem 22rem at 14% 40%, var(--ambient-3), transparent 70%);
+  }
+  /* Pressionável: resposta imediata ao clique. */
+  .pressable {
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease,
+      opacity 160ms ease;
+  }
+  .pressable:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  /* Controles do design system. */
+  /* Use sempre "btn" + a variante: class="btn btn-primary". */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium select-none rounded-[var(--radius-control)] disabled:opacity-50 disabled:pointer-events-none;
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .btn-primary {
+    @apply bg-brand text-on-brand hover:bg-brand-hover active:bg-brand-press shadow-[0_8px_24px_-12px_var(--brand),inset_0_1px_0_rgb(255_255_255/0.18)];
+  }
+  .btn-secondary {
+    @apply bg-surface border border-line text-text hover:bg-surface-hover hover:border-line-strong;
+  }
+  .btn-ghost {
+    @apply text-text-2 hover:text-text hover:bg-surface-hover;
+  }
+  .btn-danger {
+    @apply text-danger border border-[color-mix(in_oklch,var(--danger)_35%,transparent)] hover:bg-danger-soft;
+  }
+  .campo {
+    @apply w-full rounded-[var(--radius-control)] border border-line bg-surface-sunken text-text text-base transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus:outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] aria-[invalid=true]:border-danger;
+  }
+  /* Selo do tipo de arquivo, no tom da marca. */
+  .selo {
+    @apply grid place-items-center rounded-[12px] border border-line bg-surface-sunken;
   }
 }
 
-@keyframes cosmic-gradient {
-  0% {
-    stroke: #3b82f6;
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift {
+    transition:
+      transform 200ms var(--ease-out),
+      border-color 200ms ease,
+      background-color 200ms ease;
   }
-  25% {
-    stroke: #7c3aed;
-  }
-  50% {
-    stroke: #06b6d4;
-  }
-  75% {
-    stroke: #3b82f6;
-  }
-  100% {
-    stroke: #3b82f6;
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--line-strong);
+    background: var(--surface-hover);
   }
 }
 
-.cosmic-spinner {
-  animation: cosmic-spin 1s linear infinite;
-}
-
-.cosmic-spinner circle {
-  animation: cosmic-gradient 2s linear infinite;
-  stroke-linecap: round;
-}
-
-/* Cosmic Drop Zone */
-.cosmic-dropzone {
-  border: 2px dashed transparent;
-  background-image: linear-gradient(var(--surface), var(--surface)), 
-                    linear-gradient(135deg, #3b82f6, #7c3aed, #06b6d4);
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-  transition: all 300ms ease;
-}
-
-.cosmic-dropzone.dragging {
-  animation: pulse-glow 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 
-      0 0 10px rgba(59, 130, 246, 0.3),
-      0 0 20px rgba(124, 58, 237, 0.2);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
-  50% {
-    box-shadow: 
-      0 0 20px rgba(59, 130, 246, 0.5),
-      0 0 40px rgba(124, 58, 237, 0.4),
-      0 0 60px rgba(6, 182, 212, 0.3);
-  }
-}
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #111114;
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #3b82f6, #7c3aed, #ec4899);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #60a5fa, #8b5cf6, #22d3ee);
-}
-
-/* Modal Overlay */
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
-}
-
-/* Cosmic Glow Border */
-.cosmic-glow {
-  box-shadow: 
-    0 0 1px rgba(59, 130, 246, 0.5),
-    0 0 2px rgba(124, 58, 237, 0.3),
-    0 0 4px rgba(236, 72, 153, 0.2);
-}
-
-/* Cosmic Left Accent */
-.cosmic-left-accent {
-  position: relative;
-}
-
-.cosmic-left-accent::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg, #3b82f6, #7c3aed, #06b6d4);
-  border-radius: 0 2px 2px 0;
-}
-
-/* Arual Font */
-@font-face {
-  font-family: 'Arual';
-  src: url('/fonts/Arual.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
-
-.font-arual {
-  font-family: 'Arual', 'Poiret One', cursive;
 }

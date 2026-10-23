@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { assinarItem, dentroDaRaiz, itemAutorizado, lerSessao, type Sessao } from '@/lib/sessao'
 
 const ROOT_FOLDER = 'Uploads +Aura'
 
@@ -94,15 +95,30 @@ async function resolvePath(token: string, folderPath: string): Promise<string> {
   return currentId
 }
 
+const negado = (msg = 'Sessão expirada. Entre de novo.', status = 401) => NextResponse.json({ success: false, error: msg }, { status })
+const foraDaPasta = () => negado('Sem acesso a esta pasta.', 403)
+
+/** Separa pastas e arquivos da listagem do Drive, cada item com a assinatura do cliente. */
+async function montarLista(sessao: Sessao, itens: any[]) {
+  const assinados = await Promise.all(itens.map(async (f: any) => ({ ...f, sig: await assinarItem(sessao, f.id) })))
+  const folders = assinados.filter((f) => f.mimeType === 'application/vnd.google-apps.folder').map((f) => ({ id: f.id, name: f.name, type: 'folder', sig: f.sig }))
+  const files = assinados
+    .filter((f) => f.mimeType !== 'application/vnd.google-apps.folder')
+    .map((f) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime, mimeType: f.mimeType, sig: f.sig }))
+  return { folders, files }
+}
+
 export async function GET(req: NextRequest) {
+  const sessao = await lerSessao(req)
+  if (!sessao) return negado()
   try {
     const folderPath = new URL(req.url).searchParams.get('folderPath') || ''
+    if (!dentroDaRaiz(sessao, folderPath)) return foraDaPasta()
     const token = await getToken()
     const folderId = await resolvePath(token, folderPath)
     const q = `'${folderId}' in parents and trashed=false`
     const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
-    const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
-    const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime }))
+    const { folders, files } = await montarLista(sessao, data.files || [])
     return NextResponse.json({ success: true, folders, files }, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -115,6 +131,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const sessao = await lerSessao(req)
+  if (!sessao) return negado()
   try {
     const contentType = req.headers.get('content-type') || ''
 
@@ -126,6 +144,9 @@ export async function POST(req: NextRequest) {
       const chunkStart = parseInt((formData.get('chunkStart') as string) || '0')
       const totalSize = parseInt((formData.get('totalSize') as string) || '0')
       if (!file) return NextResponse.json({ success: false, error: 'Nenhum arquivo' })
+      if (!dentroDaRaiz(sessao, folderPath)) return foraDaPasta()
+      // Continuação de envio: a sessão de upload precisa ser do próprio Google Drive.
+      if (sessionUri && !sessionUri.startsWith('https://www.googleapis.com/upload/drive/')) return foraDaPasta()
 
       const token = await getToken()
       const buffer = await file.arrayBuffer()
@@ -175,6 +196,12 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     const { action } = body
+    // Caminhos e itens sempre dentro da pasta do cliente.
+    for (const campo of ['folderPath', 'targetPath'] as const)
+      if (typeof body[campo] === 'string' && !dentroDaRaiz(sessao, body[campo])) return foraDaPasta()
+    if ((action === 'startUpload' || action === 'list' || action === 'createFolder') && !dentroDaRaiz(sessao, body.folderPath || '')) return foraDaPasta()
+    if (action === 'move' && !dentroDaRaiz(sessao, body.targetPath || '')) return foraDaPasta()
+    if (['delete', 'deleteFolder', 'rename', 'move', 'listById'].includes(action) && !(await itemAutorizado(sessao, body.id, body.sig))) return foraDaPasta()
     const token = await getToken()
 
     if (action === 'startUpload') {
@@ -198,9 +225,7 @@ export async function POST(req: NextRequest) {
       const folderId = await resolvePath(token, body.folderPath || '')
       const q = `'${folderId}' in parents and trashed=false`
       const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
-      const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
-      const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime, thumbnailLink: f.thumbnailLink, webViewLink: f.webViewLink, mimeType: f.mimeType }))
-      return NextResponse.json({ success: true, folders, files })
+      return NextResponse.json({ success: true, ...(await montarLista(sessao, data.files || [])) })
     }
 
     if (action === 'delete' || action === 'deleteFolder') {
@@ -242,9 +267,7 @@ export async function POST(req: NextRequest) {
     if (action === 'listById') {
       const q = `'${body.id}' in parents and trashed=false`
       const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime)&pageSize=1000`, token)
-      const folders = (data.files || []).filter((f: any) => f.mimeType === 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'folder' }))
-      const files = (data.files || []).filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder').map((f: any) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), mimeType: f.mimeType }))
-      return NextResponse.json({ success: true, folders, files })
+      return NextResponse.json({ success: true, ...(await montarLista(sessao, data.files || [])) })
     }
 
     return NextResponse.json({ success: false, error: 'Ação desconhecida' })
