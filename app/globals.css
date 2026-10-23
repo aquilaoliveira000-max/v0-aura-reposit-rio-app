@@ -271,8 +271,9 @@
   .btn-danger {
     @apply text-danger border border-[color-mix(in_oklch,var(--danger)_35%,transparent)] hover:bg-danger-soft;
   }
+  /* No celular o campo usa 16px: abaixo disso o iPhone aproxima a tela ao tocar. */
   .campo {
-    @apply w-full rounded-[var(--radius-control)] border border-line bg-surface-sunken text-text text-base transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus:outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] aria-[invalid=true]:border-danger;
+    @apply max-sm:text-md w-full rounded-[var(--radius-control)] border border-line bg-surface-sunken text-text text-base transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus:outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] aria-[invalid=true]:border-danger;
   }
   /* Selo do tipo de arquivo, no tom da marca. */
   .selo {

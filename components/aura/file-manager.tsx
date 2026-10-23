@@ -792,7 +792,7 @@ export function FileManager() {
             </button>
           ) : null}
           {/* No celular, a pasta inicial mostra a logo; o caminho aparece só dentro das subpastas. */}
-          {!pastaAcima && <div className="flex-1 md:hidden"><Logo height={22}/></div>}
+          {!pastaAcima && <div className="flex flex-1 items-center md:hidden"><Logo height={22}/></div>}
           <nav aria-label="Caminho" className={cn('min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-base [scrollbar-width:none]', pastaAcima ? 'flex' : 'hidden md:flex')}>
             {breadcrumbs.map((crumb, index) => (
               <div key={crumb.path || 'raiz'} className="flex shrink-0 items-center gap-1">
