@@ -98,13 +98,27 @@ async function resolvePath(token: string, folderPath: string): Promise<string> {
 const negado = (msg = 'Sessão expirada. Entre de novo.', status = 401) => NextResponse.json({ success: false, error: msg }, { status })
 const foraDaPasta = () => negado('Sem acesso a esta pasta.', 403)
 
+/** Cores que o cliente pode escolher para destacar uma pasta (as mesmas do painel). */
+const CORES = ['roxo', 'azul', 'rosa', 'verde', 'amarelo', 'laranja', 'vermelho']
+
 /** Separa pastas e arquivos da listagem do Drive, cada item com a assinatura do cliente. */
 async function montarLista(sessao: Sessao, itens: any[]) {
-  const assinados = await Promise.all(itens.map(async (f: any) => ({ ...f, sig: await assinarItem(sessao, f.id) })))
-  const folders = assinados.filter((f) => f.mimeType === 'application/vnd.google-apps.folder').map((f) => ({ id: f.id, name: f.name, type: 'folder', sig: f.sig }))
-  const files = assinados
-    .filter((f) => f.mimeType !== 'application/vnd.google-apps.folder')
-    .map((f) => ({ id: f.id, name: f.name, type: 'file', size: parseInt(f.size || '0'), createdAt: f.createdTime, mimeType: f.mimeType, sig: f.sig }))
+  const assinados = await Promise.all(
+    itens.map(async (f: any) => ({
+      id: f.id,
+      name: f.name,
+      mimeType: f.mimeType,
+      sig: await assinarItem(sessao, f.id),
+      createdAt: f.createdTime,
+      modifiedAt: f.modifiedTime,
+      // Marcações do +Aura Arquivos ficam nas propriedades privadas do app no próprio item do Drive.
+      cor: CORES.includes(f.appProperties?.aura_cor) ? f.appProperties.aura_cor : undefined,
+      favorito: f.appProperties?.aura_favorito === '1' || undefined,
+      size: parseInt(f.size || '0'),
+    })),
+  )
+  const folders = assinados.filter((f) => f.mimeType === 'application/vnd.google-apps.folder').map(({ size, mimeType, ...f }) => ({ ...f, type: 'folder' }))
+  const files = assinados.filter((f) => f.mimeType !== 'application/vnd.google-apps.folder').map((f) => ({ ...f, type: 'file' }))
   return { folders, files }
 }
 
@@ -117,7 +131,7 @@ export async function GET(req: NextRequest) {
     const token = await getToken()
     const folderId = await resolvePath(token, folderPath)
     const q = `'${folderId}' in parents and trashed=false`
-    const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
+    const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,modifiedTime,appProperties)&pageSize=1000`, token)
     const { folders, files } = await montarLista(sessao, data.files || [])
     return NextResponse.json({ success: true, folders, files }, {
       headers: {
@@ -201,7 +215,7 @@ export async function POST(req: NextRequest) {
       if (typeof body[campo] === 'string' && !dentroDaRaiz(sessao, body[campo])) return foraDaPasta()
     if ((action === 'startUpload' || action === 'list' || action === 'createFolder') && !dentroDaRaiz(sessao, body.folderPath || '')) return foraDaPasta()
     if (action === 'move' && !dentroDaRaiz(sessao, body.targetPath || '')) return foraDaPasta()
-    if (['delete', 'deleteFolder', 'rename', 'move', 'listById'].includes(action) && !(await itemAutorizado(sessao, body.id, body.sig))) return foraDaPasta()
+    if (['delete', 'deleteFolder', 'rename', 'move', 'listById', 'marcar'].includes(action) && !(await itemAutorizado(sessao, body.id, body.sig))) return foraDaPasta()
     const token = await getToken()
 
     if (action === 'startUpload') {
@@ -224,7 +238,7 @@ export async function POST(req: NextRequest) {
     if (action === 'list') {
       const folderId = await resolvePath(token, body.folderPath || '')
       const q = `'${folderId}' in parents and trashed=false`
-      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,thumbnailLink,webViewLink)&pageSize=1000`, token)
+      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,modifiedTime,appProperties)&pageSize=1000`, token)
       return NextResponse.json({ success: true, ...(await montarLista(sessao, data.files || [])) })
     }
 
@@ -264,9 +278,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
+    // Cor e favorito: propriedades privadas do app no item (null apaga).
+    if (action === 'marcar') {
+      const appProperties: Record<string, string | null> = {}
+      if ('cor' in body) appProperties.aura_cor = CORES.includes(body.cor) ? body.cor : null
+      if ('favorito' in body) appProperties.aura_favorito = body.favorito ? '1' : null
+      if (!Object.keys(appProperties).length) return NextResponse.json({ success: false, error: 'Nada para marcar' }, { status: 400 })
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${body.id}?fields=id`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appProperties }),
+      })
+      if (!res.ok) return NextResponse.json({ success: false, error: await res.text() }, { status: 502 })
+      return NextResponse.json({ success: true })
+    }
+
     if (action === 'listById') {
       const q = `'${body.id}' in parents and trashed=false`
-      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime)&pageSize=1000`, token)
+      const data = await driveGet(`files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,modifiedTime,appProperties)&pageSize=1000`, token)
       return NextResponse.json({ success: true, ...(await montarLista(sessao, data.files || [])) })
     }
 

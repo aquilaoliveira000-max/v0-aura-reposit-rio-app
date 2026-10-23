@@ -1,32 +1,39 @@
 'use client'
 
-import { useState, useCallback, useRef, DragEvent, useEffect } from 'react'
+import { useState, useCallback, useRef, DragEvent, useEffect, useMemo } from 'react'
 import {
-  Upload, FolderPlus, ChevronRight, X, MoreHorizontal, Folder, LogOut, Check, RefreshCw, FolderUp,
-  Trash2, Move, Loader2, Download, ArrowLeft, Menu, CheckSquare, Pencil, UploadCloud,
+  Upload, FolderPlus, ChevronRight, ChevronLeft, X, MoreHorizontal, Folder, LogOut, Check, RefreshCw, FolderUp,
+  Trash2, Move, Loader2, Download, ArrowLeft, Menu, CheckSquare, Pencil, UploadCloud, Star, Search,
+  LayoutGrid, List, ArrowDownUp, Palette,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Logo } from './logo'
 import { FileIcon } from './file-icons'
 import { formatFileSize, getFileType, generateId } from '@/lib/aura-types'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 
+type Cor = 'roxo' | 'azul' | 'rosa' | 'verde' | 'amarelo' | 'laranja' | 'vermelho'
 interface DriveItem {
   id: string; name: string; type: 'file' | 'folder'
   /** Assinatura entregue pelo servidor na listagem; prova que o item é da pasta do cliente. */
   sig: string
-  mimeType?: string; size?: number; createdAt?: string
+  mimeType?: string; size?: number; createdAt?: string; modifiedAt?: string
+  cor?: Cor; favorito?: boolean
 }
 interface StagedFile {
   file: File; id: string; progress: number
   status: 'pending' | 'uploading' | 'done' | 'error'
   error?: string; folderPath?: string
 }
-interface BreadcrumbItem { name: string; path: string }
 interface ZipProgress { current: number; total: number; name: string }
 interface PastaDestino { id: string; name: string; path: string; label: string }
+type Ordem = 'nome' | 'recentes' | 'tamanho'
+type Vista = 'grade' | 'lista'
 
 // ── Helpers ───────────────────────────────────────────────────────────
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg','bmp','ico','heic','avif']
@@ -37,12 +44,36 @@ const isVideo = (m?: string, n?: string) => !!m?.startsWith('video/') || (!!n &&
 const isPdf   = (m?: string, n?: string) => m === 'application/pdf' || getExt(n||'') === 'pdf'
 const canPreview = (m?: string, n?: string) => isImage(m,n) || isVideo(m,n) || isPdf(m,n)
 const isFolderFile = (f: File) => f.size === 0 && f.type === ''
-const juntar = (base: string, nome: string) => (base ? `${base}/${nome}` : nome)
+const juntar = (base: string, nome: string) => (!nome ? base : base ? `${base}/${nome}` : nome)
 const getProxyUrl = (item: Pick<DriveItem, 'id' | 'sig' | 'name'>) =>
   `/api/drive/file?id=${item.id}&sig=${encodeURIComponent(item.sig)}&name=${encodeURIComponent(item.name)}`
 // Download vai direto ao Drive — sem proxy, sem timeout, sem limite de tamanho
 const getDownloadUrl = (id: string) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
+const dataCurta = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '')
+const semAcento = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+/** Cores para destacar pastas, tiradas do espectro da marca e dos tons de estado. */
+const CORES: { id: Cor; nome: string; valor: string }[] = [
+  { id: 'roxo', nome: 'Roxo', valor: 'var(--brand-text)' },
+  { id: 'azul', nome: 'Azul', valor: '#7a8bff' },
+  { id: 'rosa', nome: 'Rosa', valor: '#f07bdc' },
+  { id: 'verde', nome: 'Verde', valor: 'var(--success)' },
+  { id: 'amarelo', nome: 'Amarelo', valor: 'var(--warning)' },
+  { id: 'laranja', nome: 'Laranja', valor: '#f39a5b' },
+  { id: 'vermelho', nome: 'Vermelho', valor: 'var(--danger)' },
+]
+const valorCor = (cor?: Cor) => CORES.find(c => c.id === cor)?.valor ?? 'var(--brand-text)'
+/** Fundo e borda suaves do cartão de uma pasta colorida. */
+const estiloCor = (cor?: Cor) => cor ? {
+  background: `color-mix(in oklch, ${valorCor(cor)} 9%, var(--surface))`,
+  borderColor: `color-mix(in oklch, ${valorCor(cor)} 34%, transparent)`,
+} : undefined
+
+const lerPreferencia = <T extends string>(chave: string, padrao: T, validos: T[]): T => {
+  try { const v = localStorage.getItem(chave) as T | null; return v && validos.includes(v) ? v : padrao } catch { return padrao }
+}
+const gravarPreferencia = (chave: string, valor: string) => { try { localStorage.setItem(chave, valor) } catch { /* modo privado */ } }
 
 async function apiPost(body: object) {
   const res = await fetch('/api/drive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -98,19 +129,19 @@ async function downloadFolderAsZip(folder: DriveItem, basePath: string, onProgre
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** Ícone de pasta no tom da marca. */
-function IconePasta({ size = 22 }: { size?: number }) {
-  return <Folder style={{ width: size, height: size }} className="text-brand-text" fill="currentColor" fillOpacity={0.18} strokeWidth={1.75} aria-hidden />
+/** Ícone de pasta na cor escolhida (ou no tom da marca). */
+function IconePasta({ size = 22, cor }: { size?: number; cor?: Cor }) {
+  return <Folder style={{ width: size, height: size, color: valorCor(cor) }} fill="currentColor" fillOpacity={cor ? 0.32 : 0.18} strokeWidth={1.75} aria-hidden />
 }
 
 const dialogo = 'glass border-line rounded-[var(--radius-dialog)] shadow-[var(--shadow-pop)] text-text sm:max-w-md'
+const menuClasse = 'glass min-w-48 rounded-[12px] border-line p-1 text-text shadow-[var(--shadow-pop)]'
 
 export function FileManager() {
   const router = useRouter()
   const [items, setItems] = useState<DriveItem[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [currentPath, setCurrentPath] = useState('')
-  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([{ name: 'Meus arquivos', path: '' }])
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null)
@@ -129,7 +160,6 @@ export function FileManager() {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [movingIds, setMovingIds] = useState<Set<string>>(new Set())
   const [moveLoading, setMoveLoading] = useState(false)
-  const [isUploadingAll, setIsUploadingAll] = useState(false)
   const [previewFile, setPreviewFile] = useState<DriveItem | null>(null)
   const [embedFile, setEmbedFile] = useState<DriveItem | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -138,32 +168,22 @@ export function FileManager() {
   const [zipProgress, setZipProgress] = useState<ZipProgress | null>(null)
   const [allFolders, setAllFolders] = useState<PastaDestino[]>([])
   const [loadingFolders, setLoadingFolders] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [ordem, setOrdem] = useState<Ordem>('nome')
+  const [vista, setVista] = useState<Vista>('grade')
+  const [excluir, setExcluir] = useState<DriveItem[] | null>(null)
+  const [excluindo, setExcluindo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const currentPathRef = useRef('')
+  const enviando = useRef(false)
 
   useEffect(() => { currentPathRef.current = currentPath }, [currentPath])
-
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined
-    // A pasta do cliente vem da sessão no servidor, nunca do navegador.
-    fetch('/api/auth', { cache: 'no-store' })
-      .then(r => r.json())
-      .then((s: { success: boolean; usuario?: string; raiz?: string }) => {
-        if (!s.success) { router.replace('/'); return }
-        const root = s.raiz || ''
-        setUsuario(s.usuario || '')
-        setClientRoot(root)
-        setCurrentPath(root)
-        currentPathRef.current = root
-        setBreadcrumbs([{ name: 'Meus arquivos', path: root }])
-        loadItems(root, true)
-        interval = setInterval(() => loadItems(currentPathRef.current, false), 30000)
-      })
-      .catch(() => router.replace('/'))
-    return () => clearInterval(interval)
-  }, [router])
+    setOrdem(lerPreferencia<Ordem>('aura_ordem', 'nome', ['nome', 'recentes', 'tamanho']))
+    setVista(lerPreferencia<Vista>('aura_vista', 'grade', ['grade', 'lista']))
+  }, [])
 
-  const loadItems = async (path: string, showLoader = true): Promise<void> => {
+  const loadItems = useCallback(async (path: string, showLoader = true): Promise<void> => {
     if (showLoader) setInitialLoading(true)
     try {
       const res = await fetch(`/api/drive?folderPath=${encodeURIComponent(path)}&_t=${Date.now()}`, { cache: 'no-store' })
@@ -174,6 +194,9 @@ export function FileManager() {
           ...data.folders.map((f: any) => ({ ...f, type: 'folder' as const })),
           ...data.files.map((f: any) => ({ ...f, type: 'file' as const }))
         ])
+      } else if (res.status === 403 && path !== clientRootRef.current) {
+        // Endereço com pasta de fora: volta para a pasta do cliente.
+        abrirPasta(clientRootRef.current, 'substituir')
       } else {
         console.error('[Drive] Erro ao listar:', data.error || 'erro desconhecido')
       }
@@ -181,35 +204,75 @@ export function FileManager() {
       console.error('[Drive] Falha de rede:', err)
     }
     if (showLoader) setInitialLoading(false)
+  }, [router]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clientRootRef = useRef('')
+
+  /** Pasta aberta no endereço (?pasta=...), relativa à pasta do cliente: o "voltar" do navegador funciona. */
+  const caminhoDoEndereco = (root: string) => {
+    const rel = new URLSearchParams(window.location.search).get('pasta') || ''
+    return juntar(root, rel.split('/').map(p => p.trim()).filter(Boolean).join('/'))
   }
+  const abrirPasta = (path: string, historico: 'empilhar' | 'substituir' | 'nada' = 'empilhar') => {
+    const root = clientRootRef.current
+    const rel = root && path.startsWith(root) ? path.slice(root.length).replace(/^\//, '') : path
+    if (historico !== 'nada') {
+      const url = rel ? `/files?pasta=${encodeURIComponent(rel)}` : '/files'
+      if (historico === 'empilhar') window.history.pushState({ pasta: path }, '', url)
+      else window.history.replaceState({ pasta: path }, '', url)
+    }
+    setCurrentPath(path); currentPathRef.current = path
+    setSelectedIds(new Set()); setSelectionMode(false); setSidebarOpen(false); setBusca('')
+    loadItems(path, true)
+  }
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined
+    // A pasta do cliente vem da sessão no servidor, nunca do navegador.
+    fetch('/api/auth', { cache: 'no-store' })
+      .then(r => r.json())
+      .then((s: { success: boolean; usuario?: string; raiz?: string }) => {
+        if (!s.success) { router.replace('/'); return }
+        const root = s.raiz || ''
+        clientRootRef.current = root
+        setUsuario(s.usuario || '')
+        setClientRoot(root)
+        abrirPasta(caminhoDoEndereco(root), 'substituir')
+        interval = setInterval(() => document.visibilityState === 'visible' && loadItems(currentPathRef.current, false), 30000)
+      })
+      .catch(() => router.replace('/'))
+    const aoVoltar = () => abrirPasta(caminhoDoEndereco(clientRootRef.current), 'nada')
+    window.addEventListener('popstate', aoVoltar)
+    return () => { clearInterval(interval); window.removeEventListener('popstate', aoVoltar) }
+  }, [router]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Caminho visível: "Meus arquivos" e as subpastas a partir da pasta do cliente.
+  const breadcrumbs = useMemo(() => {
+    const rel = clientRoot && currentPath.startsWith(clientRoot) ? currentPath.slice(clientRoot.length).replace(/^\//, '') : clientRoot ? '' : currentPath
+    const partes = rel ? rel.split('/') : []
+    return [{ name: 'Meus arquivos', path: clientRoot }, ...partes.map((nome, i) => ({ name: nome, path: juntar(clientRoot, partes.slice(0, i + 1).join('/')) }))]
+  }, [currentPath, clientRoot])
+  const pastaAcima = breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length - 2] : null
+  const voltar = () => pastaAcima && abrirPasta(pastaAcima.path)
 
   const sair = async () => {
     await fetch('/api/auth', { method: 'DELETE' }).catch(() => undefined)
     router.replace('/')
   }
 
-  const navigateTo = (name: string, path: string) => {
-    setCurrentPath(path); setBreadcrumbs(prev => [...prev, { name, path }])
-    setSelectedIds(new Set()); setSelectionMode(false); setSidebarOpen(false)
-    loadItems(path, true)
-  }
-
-  const navigateToBreadcrumb = (index: number) => {
-    const crumb = breadcrumbs[index]
-    setBreadcrumbs(breadcrumbs.slice(0, index + 1)); setCurrentPath(crumb.path)
-    setSelectedIds(new Set()); setSelectionMode(false); setSidebarOpen(false); loadItems(crumb.path, true)
-  }
-
-  const handleDragOver = useCallback((e: DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
-  const handleDragLeave = useCallback((e: DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
-  const handleDrop = useCallback((e: DragEvent) => {
-    e.preventDefault(); setIsDragging(false)
-    const files = Array.from(e.dataTransfer.files).filter(f => {
+  // ── Envio ──
+  const adicionarNaFila = (files: File[], folderPath?: (f: File) => string) => {
+    const validos = files.filter(f => {
       if (isFolderFile(f)) { setStagedFiles(prev => [...prev, { file: f, id: generateId(), progress: 0, status: 'error', error: 'É uma pasta. Use "Enviar pasta".' }]); return false }
       return true
     })
-    if (files.length) setStagedFiles(prev => [...prev, ...files.map(f => ({ file: f, id: generateId(), progress: 0, status: 'pending' as const }))])
-  }, [])
+    if (validos.length) setStagedFiles(prev => [...prev, ...validos.map(f => ({ file: f, id: generateId(), progress: 0, status: 'pending' as const, folderPath: folderPath?.(f) ?? currentPathRef.current }))])
+  }
+
+  const handleDragOver = useCallback((e: DragEvent) => { e.preventDefault(); if (e.dataTransfer.types.includes('Files')) setIsDragging(true) }, [])
+  // Só encerra quando o arrasto sai da janela (relatedTarget nulo), não ao passar entre elementos.
+  const handleDragLeave = useCallback((e: DragEvent) => { e.preventDefault(); if (!e.relatedTarget) setIsDragging(false) }, [])
+  const handleDrop = (e: DragEvent) => { e.preventDefault(); setIsDragging(false); adicionarNaFila(Array.from(e.dataTransfer.files)) }
 
   const handleItemDragStart = (e: React.DragEvent, item: DriveItem) => {
     setDraggingItemId(item.id); e.dataTransfer.setData('itemId', item.id)
@@ -217,7 +280,8 @@ export function FileManager() {
   const handleFolderDragOver = (e: React.DragEvent, id: string) => { e.preventDefault(); e.stopPropagation(); setDragOverFolder(id) }
   const handleFolderDragLeave = () => setDragOverFolder(null)
   const handleFolderDrop = async (e: React.DragEvent, target: DriveItem) => {
-    e.preventDefault(); e.stopPropagation(); setDragOverFolder(null)
+    e.preventDefault(); e.stopPropagation(); setDragOverFolder(null); setIsDragging(false)
+    if (e.dataTransfer.files.length) { adicionarNaFila(Array.from(e.dataTransfer.files), () => juntar(currentPath, target.name)); return }
     const item = items.find(i => i.id === e.dataTransfer.getData('itemId'))
     if (!item || item.id === target.id) return
     setMovingIds(prev => new Set(prev).add(item.id))
@@ -225,23 +289,12 @@ export function FileManager() {
     finally { setMovingIds(prev => { const n = new Set(prev); n.delete(item.id); return n }) }
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => {
-      if (isFolderFile(f)) { setStagedFiles(prev => [...prev, { file: f, id: generateId(), progress: 0, status: 'error', error: 'É uma pasta. Use "Enviar pasta".' }]); return false }
-      return true
-    })
-    if (files.length) setStagedFiles(prev => [...prev, ...files.map(f => ({ file: f, id: generateId(), progress: 0, status: 'pending' as const }))])
-    e.target.value = ''
-  }
-
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => { adicionarNaFila(Array.from(e.target.files || [])); e.target.value = '' }
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (!files.length) return
-    setStagedFiles(prev => [...prev, ...files.map(f => {
+    adicionarNaFila(Array.from(e.target.files || []), f => {
       const rel = (f as any).webkitRelativePath || f.name
-      const folderPart = rel.split('/').slice(0, -1).join('/')
-      return { file: f, id: generateId(), progress: 0, status: 'pending' as const, folderPath: juntar(currentPath, folderPart) }
-    })])
+      return juntar(currentPathRef.current, rel.split('/').slice(0, -1).join('/'))
+    })
     e.target.value = ''
   }
 
@@ -251,7 +304,6 @@ export function FileManager() {
       const CHUNK = 8 * 1024 * 1024 // 8MB direto ao Drive
       const { file } = staged
       const totalSize = file.size
-      const folderPath = staged.folderPath ?? currentPathRef.current
 
       // Passo 1: pede session URI ao nosso servidor (autenticação)
       const startData = await apiPost({
@@ -259,7 +311,7 @@ export function FileManager() {
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         totalSize,
-        folderPath,
+        folderPath: staged.folderPath ?? currentPathRef.current,
       })
       if (!startData.success || !startData.sessionUri) throw new Error(startData.error || 'Erro ao iniciar o envio')
 
@@ -308,33 +360,47 @@ export function FileManager() {
         loadItems(currentPathRef.current, false)
       }, 1500)
     } catch (err: any) {
-      if (err.name === 'AbortError') return // cancelado pelo usuário
       setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: 'error', error: err.message } : f))
     }
   }
 
-  const handleUploadAll = async () => {
-    if (isUploadingAll) return
-    setIsUploadingAll(true)
-    const pending = stagedFiles.filter(f => f.status === 'pending')
-    const folderUps = pending.filter(f => f.folderPath && f.folderPath !== currentPathRef.current)
-    const regularUps = pending.filter(f => !f.folderPath || f.folderPath === currentPathRef.current)
-    await Promise.all(regularUps.map(uploadFile))
-    for (const s of folderUps) await uploadFile(s)
-    setIsUploadingAll(false)
-  }
+  // O envio começa sozinho: arquivos da pasta atual juntos (até 3 por vez), pastas inteiras um a um.
+  useEffect(() => {
+    const pendentes = stagedFiles.filter(f => f.status === 'pending')
+    if (!pendentes.length || enviando.current) return
+    enviando.current = true
+    ;(async () => {
+      const soltos = pendentes.filter(f => f.folderPath === currentPathRef.current)
+      const emPastas = pendentes.filter(f => f.folderPath !== currentPathRef.current)
+      for (let i = 0; i < soltos.length; i += 3) await Promise.all(soltos.slice(i, i + 3).map(uploadFile))
+      for (const s of emPastas) await uploadFile(s)
+      enviando.current = false
+      setStagedFiles(prev => [...prev]) // confere se entrou mais coisa na fila durante o envio
+    })()
+  }, [stagedFiles]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleDelete = async (item: DriveItem) => {
-    setDeletingIds(prev => new Set(prev).add(item.id))
-    try { await apiPost({ action: item.type === 'folder' ? 'deleteFolder' : 'delete', id: item.id, sig: item.sig }); loadItems(currentPath, false) }
-    finally { setDeletingIds(prev => { const n = new Set(prev); n.delete(item.id); return n }) }
-  }
+  const tentarDeNovo = (id: string) => setStagedFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'pending', progress: 0, error: undefined } : f))
+  const cancelUpload = (id: string) => setStagedFiles(prev => prev.filter(f => f.id !== id))
 
-  const handleDeleteSelected = async () => {
-    const toDelete = items.filter(i => selectedIds.has(i.id))
-    toDelete.forEach(i => setDeletingIds(prev => new Set(prev).add(i.id)))
-    await Promise.all(toDelete.map(i => apiPost({ action: i.type === 'folder' ? 'deleteFolder' : 'delete', id: i.id, sig: i.sig })))
+  // ── Ações nos itens ──
+  const confirmarExclusao = async () => {
+    if (!excluir) return
+    setExcluindo(true)
+    excluir.forEach(i => setDeletingIds(prev => new Set(prev).add(i.id)))
+    await Promise.all(excluir.map(i => apiPost({ action: i.type === 'folder' ? 'deleteFolder' : 'delete', id: i.id, sig: i.sig })))
+    setDeletingIds(new Set()); setExcluir(null); setExcluindo(false)
     setSelectedIds(new Set()); setSelectionMode(false); loadItems(currentPath, false)
+  }
+
+  /** Cor e favorito: atualiza na hora e grava no Drive em seguida. */
+  const marcar = async (item: DriveItem, mudanca: { cor?: Cor | null; favorito?: boolean }) => {
+    setItems(prev => prev.map(i => i.id === item.id ? {
+      ...i,
+      ...('cor' in mudanca ? { cor: mudanca.cor ?? undefined } : {}),
+      ...('favorito' in mudanca ? { favorito: mudanca.favorito || undefined } : {}),
+    } : i))
+    const r = await apiPost({ action: 'marcar', id: item.id, sig: item.sig, ...mudanca }).catch(() => ({ success: false }))
+    if (!r.success) loadItems(currentPathRef.current, false)
   }
 
   const openMoveModal = async (item?: DriveItem) => {
@@ -351,8 +417,7 @@ export function FileManager() {
   const handleMoveSelected = async () => {
     setMoveLoading(true)
     const alvo = items.filter(i => selectedIds.has(i.id))
-    // Só escurece se for seleção múltipla real (selectionMode ativo)
-    if (selectionMode) alvo.forEach(i => setMovingIds(prev => new Set(prev).add(i.id)))
+    alvo.forEach(i => setMovingIds(prev => new Set(prev).add(i.id)))
     await Promise.all(alvo.map(i => apiPost({ action: 'move', id: i.id, sig: i.sig, targetPath: moveFolderPath })))
     setMovingIds(new Set()); setSelectedIds(new Set()); setSelectionMode(false)
     setShowMoveModal(false); setMoveLoading(false); loadItems(currentPath, false)
@@ -368,14 +433,14 @@ export function FileManager() {
     loadItems(currentPath, false)
   }
 
+  const abrirRenomear = (item: DriveItem) => { setSelectedItem(item); setRenameValue(item.name); setShowRenameModal(true) }
   const handleRename = async () => {
     if (!selectedItem || !renameValue.trim()) return
+    if (renameValue.includes('/')) return
     await apiPost({ action: 'rename', id: selectedItem.id, sig: selectedItem.sig, name: renameValue.trim() })
     setShowRenameModal(false); setSelectedItem(null); setRenameValue('')
     loadItems(currentPath, false)
   }
-
-  const cancelUpload = (id: string) => setStagedFiles(prev => prev.filter(f => f.id !== id))
 
   const handleDownloadFolder = async (folder: DriveItem) => {
     setZipProgress({ current: 0, total: 0, name: 'Preparando...' })
@@ -401,7 +466,7 @@ export function FileManager() {
 
   const abrirItem = (item: DriveItem) => {
     if (selectionMode) { toggleSelect(item.id); return }
-    if (item.type === 'folder') navigateTo(item.name, juntar(currentPath, item.name))
+    if (item.type === 'folder') abrirPasta(juntar(currentPath, item.name))
     else if (isImage(item.mimeType, item.name)) setPreviewFile(item)
     else if (canPreview(item.mimeType, item.name)) setEmbedFile(item)
     else window.open(getDownloadUrl(item.id), '_blank')
@@ -409,11 +474,46 @@ export function FileManager() {
 
   const abrirNovaPasta = () => { setNewFolderName(''); setFolderNameError(''); setSidebarOpen(false); setShowNewFolderModal(true) }
   const alternarSelecao = () => { setSelectionMode(!selectionMode); setSelectedIds(new Set()) }
+  const mudarOrdem = (o: Ordem) => { setOrdem(o); gravarPreferencia('aura_ordem', o) }
+  const mudarVista = (v: Vista) => { setVista(v); gravarPreferencia('aura_vista', v) }
 
-  const folders = items.filter(i => i.type === 'folder')
-  const files = items.filter(i => i.type === 'file')
-  const pendentes = stagedFiles.filter(f => f.status === 'pending').length
+  // ── Lista visível: busca, favoritos primeiro, depois a ordem escolhida ──
+  const ordenar = useCallback((a: DriveItem, b: DriveItem) => {
+    if (!!a.favorito !== !!b.favorito) return a.favorito ? -1 : 1
+    if (ordem === 'recentes') return (b.modifiedAt || '').localeCompare(a.modifiedAt || '')
+    if (ordem === 'tamanho') return (b.size || 0) - (a.size || 0)
+    return a.name.localeCompare(b.name, 'pt-BR', { numeric: true, sensitivity: 'base' })
+  }, [ordem])
+  const visiveis = useMemo(() => {
+    const termo = semAcento(busca.trim())
+    return termo ? items.filter(i => semAcento(i.name).includes(termo)) : items
+  }, [items, busca])
+  const folders = useMemo(() => visiveis.filter(i => i.type === 'folder').sort(ordenar), [visiveis, ordenar])
+  const files = useMemo(() => visiveis.filter(i => i.type === 'file').sort(ordenar), [visiveis, ordenar])
+  const imagens = useMemo(() => files.filter(f => isImage(f.mimeType, f.name)), [files])
   const pastaAtual = breadcrumbs[breadcrumbs.length - 1]?.name ?? 'Meus arquivos'
+  const enviandoAgora = stagedFiles.filter(f => f.status === 'uploading' || f.status === 'pending').length
+  const totalPasta = { pastas: items.filter(i => i.type === 'folder').length, arquivos: items.filter(i => i.type === 'file').length }
+
+  // Teclado na visualização: Esc fecha, setas passam as imagens.
+  useEffect(() => {
+    if (!previewFile && !embedFile) return
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setPreviewFile(null); setEmbedFile(null) }
+      if (previewFile && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        const i = imagens.findIndex(f => f.id === previewFile.id)
+        const prox = imagens[(i + (e.key === 'ArrowRight' ? 1 : -1) + imagens.length) % imagens.length]
+        if (prox) setPreviewFile(prox)
+      }
+    }
+    window.addEventListener('keydown', tecla)
+    return () => window.removeEventListener('keydown', tecla)
+  }, [previewFile, embedFile, imagens])
+  const passarImagem = (passo: number) => {
+    if (!previewFile) return
+    const i = imagens.findIndex(f => f.id === previewFile.id)
+    setPreviewFile(imagens[(i + passo + imagens.length) % imagens.length] ?? previewFile)
+  }
 
   const ItemMenu = ({ item }: { item: DriveItem }) => (
     <DropdownMenu>
@@ -422,16 +522,36 @@ export function FileManager() {
           <MoreHorizontal className="size-4"/>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="glass min-w-44 rounded-[12px] border-line p-1 text-text shadow-[var(--shadow-pop)]">
+      <DropdownMenuContent align="end" className={menuClasse} onClick={e => e.stopPropagation()}>
+        <DropdownMenuItem onClick={() => marcar(item, { favorito: !item.favorito })}>
+          <Star className={cn('size-4', item.favorito && 'fill-current text-warning')}/> {item.favorito ? 'Tirar dos favoritos' : 'Favoritar'}
+        </DropdownMenuItem>
         {item.type === 'file' ? (
           <DropdownMenuItem asChild><a href={getDownloadUrl(item.id)} target="_blank" rel="noopener noreferrer"><Download className="size-4"/> Baixar</a></DropdownMenuItem>
         ) : (
           <DropdownMenuItem onClick={() => handleDownloadFolder(item)}><Download className="size-4"/> Baixar como ZIP</DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={() => openMoveModal(item)}><Move className="size-4"/> Mover para...</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => { setSelectedItem(item); setRenameValue(item.name); setShowRenameModal(true) }}><Pencil className="size-4"/> Renomear</DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-line" />
-        <DropdownMenuItem onClick={() => handleDelete(item)} className="text-danger focus:text-danger"><Trash2 className="size-4 text-danger"/> Excluir</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => abrirRenomear(item)}><Pencil className="size-4"/> Renomear</DropdownMenuItem>
+        {item.type === 'folder' && (
+          <>
+            <DropdownMenuSeparator className="bg-line"/>
+            <DropdownMenuLabel className="flex items-center gap-2 px-2 pb-1 pt-1.5 text-xs font-medium text-text-3"><Palette className="size-3.5"/> Cor da pasta</DropdownMenuLabel>
+            <div className="flex flex-wrap gap-1.5 px-2 pb-2 pt-0.5">
+              <DropdownMenuItem onClick={() => marcar(item, { cor: null })} aria-label="Sem cor" title="Sem cor"
+                className={cn('size-6 justify-center rounded-full border border-line-strong p-0', !item.cor && 'ring-2 ring-text ring-offset-2 ring-offset-[var(--surface-solid)]')}>
+                <X className="size-3 text-text-3"/>
+              </DropdownMenuItem>
+              {CORES.map(c => (
+                <DropdownMenuItem key={c.id} onClick={() => marcar(item, { cor: c.id })} aria-label={c.nome} title={c.nome}
+                  className={cn('size-6 rounded-full p-0 focus:bg-transparent', item.cor === c.id && 'ring-2 ring-text ring-offset-2 ring-offset-[var(--surface-solid)]')}
+                  style={{ background: c.valor }}/>
+              ))}
+            </div>
+          </>
+        )}
+        <DropdownMenuSeparator className="bg-line"/>
+        <DropdownMenuItem onClick={() => setExcluir([item])} className="text-danger focus:text-danger"><Trash2 className="size-4 text-danger"/> Excluir</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -447,31 +567,40 @@ export function FileManager() {
     )
   }
 
+  const Favorito = ({ item, className }: { item: DriveItem; className?: string }) =>
+    item.favorito ? <Star className={cn('size-3.5 shrink-0 fill-current text-warning', className)} aria-label="Favorito"/> : null
+
+  const ocupado = (item: DriveItem) => deletingIds.has(item.id) || movingIds.has(item.id)
   const estadoCard = (item: DriveItem) => cn(
-    (deletingIds.has(item.id) || movingIds.has(item.id)) && 'pointer-events-none opacity-40',
-    selectionMode && selectedIds.has(item.id) && 'border-brand bg-brand-soft',
-    dragOverFolder === item.id && 'border-brand bg-brand-soft',
+    ocupado(item) && 'pointer-events-none opacity-40',
+    selectionMode && selectedIds.has(item.id) && '!border-brand !bg-brand-soft',
+    dragOverFolder === item.id && '!border-brand !bg-brand-soft',
     draggingItemId === item.id && 'opacity-50',
   )
+  const alvoDePasta = (item: DriveItem) => ({
+    onDragOver: (e: React.DragEvent) => handleFolderDragOver(e, item.id),
+    onDragLeave: handleFolderDragLeave,
+    onDrop: (e: React.DragEvent) => handleFolderDrop(e, item),
+  })
 
   const CartaoPasta = ({ item }: { item: DriveItem }) => (
     <div
       draggable={!selectionMode}
       onDragStart={e => handleItemDragStart(e, item)}
       onDragEnd={() => setDraggingItemId(null)}
-      onDragOver={e => handleFolderDragOver(e, item.id)}
-      onDragLeave={handleFolderDragLeave}
-      onDrop={e => handleFolderDrop(e, item)}
+      {...alvoDePasta(item)}
+      style={estiloCor(item.cor)}
       className={cn('panel hover-lift group relative flex items-center gap-3 py-2.5 pl-3 pr-2', estadoCard(item))}
     >
       {selectionMode && <Marcador item={item}/>}
       <button onClick={() => abrirItem(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <span className="selo size-10 shrink-0"><IconePasta/></span>
+        <span className="selo size-10 shrink-0"><IconePasta cor={item.cor}/></span>
         <span className="min-w-0 flex-1 truncate text-base font-medium" title={item.name}>{item.name}</span>
+        <Favorito item={item}/>
       </button>
-      {(deletingIds.has(item.id) || movingIds.has(item.id))
+      {ocupado(item)
         ? <Loader2 className="size-4 shrink-0 animate-spin text-brand-text"/>
-        : !selectionMode && <div className="opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100"><ItemMenu item={item}/></div>}
+        : !selectionMode && <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"><ItemMenu item={item}/></div>}
     </div>
   )
 
@@ -484,49 +613,59 @@ export function FileManager() {
     >
       <button onClick={() => abrirItem(item)} className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden border-b border-line bg-surface-sunken">
         {isImage(item.mimeType, item.name) ? (
-          <img src={getProxyUrl(item)} alt="" loading="lazy" className="size-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
+          <img src={getProxyUrl(item)} alt="" loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
         ) : (
-          <FileIcon type={getFileType(item.name)} size={30}/>
+          <span className="flex flex-col items-center gap-2">
+            <FileIcon type={getFileType(item.name)} size={30}/>
+            <span className="rounded-md bg-surface px-1.5 py-0.5 text-2xs font-semibold tracking-wide text-text-3">{getExt(item.name).toUpperCase() || 'ARQUIVO'}</span>
+          </span>
         )}
-        {(deletingIds.has(item.id) || movingIds.has(item.id)) && (
-          <span className="absolute inset-0 grid place-items-center bg-black/40"><Loader2 className="size-5 animate-spin text-brand-text"/></span>
-        )}
+        {ocupado(item) && <span className="absolute inset-0 grid place-items-center bg-black/40"><Loader2 className="size-5 animate-spin text-brand-text"/></span>}
+        {item.favorito && <span className="absolute right-2 top-2 grid size-6 place-items-center rounded-full bg-black/55 backdrop-blur"><Star className="size-3.5 fill-current text-warning"/></span>}
       </button>
       {selectionMode && <div className="absolute left-2.5 top-2.5"><Marcador item={item}/></div>}
       <div className="flex items-center gap-1 py-2 pl-3 pr-1.5">
         <button onClick={() => abrirItem(item)} className="min-w-0 flex-1 text-left">
           <p className="truncate text-sm font-medium" title={item.name}>{item.name}</p>
-          <p className="text-xs text-text-3 tabular">{item.size ? formatFileSize(item.size) : getExt(item.name).toUpperCase() || 'Arquivo'}</p>
+          <p className="truncate text-xs text-text-3 tabular">{[item.size ? formatFileSize(item.size) : '', dataCurta(item.modifiedAt)].filter(Boolean).join(' · ')}</p>
         </button>
         {!selectionMode && <ItemMenu item={item}/>}
       </div>
     </div>
   )
 
-  const LinhaMobile = ({ item }: { item: DriveItem }) => (
-    <div className={cn('flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0 transition-colors',
-      selectionMode && selectedIds.has(item.id) ? 'bg-brand-soft' : 'active:bg-surface-hover',
-      (deletingIds.has(item.id) || movingIds.has(item.id)) && 'opacity-40')}>
+  /** Linha da vista em lista (computador) e do celular. */
+  const Linha = ({ item, compacta }: { item: DriveItem; compacta?: boolean }) => (
+    <div
+      draggable={!selectionMode && !compacta}
+      onDragStart={e => handleItemDragStart(e, item)}
+      onDragEnd={() => setDraggingItemId(null)}
+      {...(item.type === 'folder' ? alvoDePasta(item) : {})}
+      className={cn('group flex items-center gap-3 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 md:px-4',
+        selectionMode && selectedIds.has(item.id) ? 'bg-brand-soft' : 'hover:bg-surface-hover active:bg-surface-hover',
+        dragOverFolder === item.id && 'bg-brand-soft', ocupado(item) && 'opacity-40')}>
       {selectionMode && <Marcador item={item}/>}
       <button onClick={() => abrirItem(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <span className="selo size-11 shrink-0 overflow-hidden">
-          {item.type === 'folder' ? <IconePasta/> : isImage(item.mimeType, item.name)
+        <span className="selo size-10 shrink-0 overflow-hidden" style={item.type === 'folder' ? estiloCor(item.cor) : undefined}>
+          {item.type === 'folder' ? <IconePasta cor={item.cor} size={20}/> : isImage(item.mimeType, item.name)
             ? <img src={getProxyUrl(item)} alt="" loading="lazy" className="size-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
-            : <FileIcon type={getFileType(item.name)} size={20}/>}
+            : <FileIcon type={getFileType(item.name)} size={19}/>}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-medium">{item.name}</span>
-          <span className="block text-xs text-text-3 tabular">{item.type === 'folder' ? 'Pasta' : item.size ? formatFileSize(item.size) : 'Arquivo'}</span>
+          <span className="flex items-center gap-1.5"><span className="truncate text-base font-medium">{item.name}</span><Favorito item={item}/></span>
+          <span className="block text-xs text-text-3 tabular md:hidden">{item.type === 'folder' ? 'Pasta' : [item.size ? formatFileSize(item.size) : '', dataCurta(item.modifiedAt)].filter(Boolean).join(' · ')}</span>
         </span>
+        <span className="hidden w-32 shrink-0 text-sm text-text-3 tabular md:block">{dataCurta(item.modifiedAt)}</span>
+        <span className="hidden w-24 shrink-0 text-right text-sm text-text-3 tabular md:block">{item.type === 'folder' ? '—' : item.size ? formatFileSize(item.size) : ''}</span>
       </button>
-      {(deletingIds.has(item.id) || movingIds.has(item.id)) ? <Loader2 className="size-4 shrink-0 animate-spin text-brand-text"/> : !selectionMode && (
+      {ocupado(item) ? <Loader2 className="size-4 shrink-0 animate-spin text-brand-text"/> : !selectionMode && (
         <div className="flex shrink-0 items-center">
           {item.type === 'file' ? (
-            <a href={getDownloadUrl(item.id)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost size-10" aria-label={`Baixar ${item.name}`}>
+            <a href={getDownloadUrl(item.id)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost size-9 md:opacity-0 md:group-hover:opacity-100" aria-label={`Baixar ${item.name}`}>
               <Download className="size-[18px]"/>
             </a>
           ) : (
-            <button onClick={() => handleDownloadFolder(item)} className="btn btn-ghost size-10" aria-label={`Baixar ${item.name} como ZIP`}>
+            <button onClick={() => handleDownloadFolder(item)} className="btn btn-ghost size-9 md:opacity-0 md:group-hover:opacity-100" aria-label={`Baixar ${item.name} como ZIP`}>
               <Download className="size-[18px]"/>
             </button>
           )}
@@ -550,7 +689,7 @@ export function FileManager() {
         {breadcrumbs.map((crumb, index) => {
           const atual = index === breadcrumbs.length - 1
           return (
-            <button key={index} onClick={() => navigateToBreadcrumb(index)}
+            <button key={crumb.path || 'raiz'} onClick={() => !atual && abrirPasta(crumb.path)}
               className={cn('group flex h-9 items-center gap-2.5 rounded-[10px] pr-2.5 text-left text-base transition-colors duration-150',
                 atual ? 'bg-brand-soft font-medium text-text shadow-[inset_0_0_0_1px_var(--line)]' : 'text-text-2 hover:bg-surface-hover hover:text-text')}
               style={{ paddingLeft: 10 + Math.min(index, 6) * 12 }}>
@@ -567,8 +706,10 @@ export function FileManager() {
     </nav>
   )
 
+  const rotuloOrdem: Record<Ordem, string> = { nome: 'Nome', recentes: 'Mais recentes', tamanho: 'Tamanho' }
+
   return (
-    <div className="relative min-h-dvh">
+    <div className="relative min-h-dvh" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
       <div className="ambient" aria-hidden/>
       {/* Entradas de arquivo únicas, acionadas pelos botões e pela área de soltar. */}
       <input ref={fileInputRef} id="enviar-arquivos" type="file" className="hidden" multiple onChange={handleFileSelect}/>
@@ -586,20 +727,32 @@ export function FileManager() {
         </div>
       )}
 
-      <div className="relative z-[1] lg:pl-[248px]">
+      {/* Soltar arquivos em qualquer lugar da tela */}
+      {isDragging && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[45] flex justify-center px-6">
+          <div className="glass flex items-center gap-3 rounded-full border border-brand px-5 py-3 shadow-[var(--shadow-pop)]">
+            <span className="grid size-9 place-items-center rounded-full bg-brand text-on-brand"><UploadCloud className="size-5"/></span>
+            <p className="text-base"><span className="font-semibold">Solte para enviar</span> <span className="text-text-2">em {pastaAtual}, ou em cima de uma pasta.</span></p>
+          </div>
+        </div>
+      )}
+
+      <div className={cn('relative z-[1] transition-[box-shadow] lg:pl-[248px]', isDragging && 'shadow-[inset_0_0_0_2px_var(--brand)]')}>
         <header className="glass sticky top-0 z-10 flex h-16 items-center gap-2 border-b border-line px-3 sm:px-6">
           <button onClick={() => setSidebarOpen(true)} aria-label="Abrir menu" className="btn btn-ghost size-9 lg:hidden"><Menu className="size-[18px]"/></button>
-          {breadcrumbs.length > 1 && (
-            <button onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)} aria-label="Voltar" className="btn btn-ghost size-9 md:hidden"><ArrowLeft className="size-[18px]"/></button>
-          )}
+          {pastaAcima ? (
+            <button onClick={voltar} className="btn btn-ghost h-9 shrink-0 px-2.5 text-base" aria-label={`Voltar para ${pastaAcima.name}`} title={`Voltar para ${pastaAcima.name}`}>
+              <ArrowLeft className="size-[18px]"/> <span className="max-sm:hidden">Voltar</span>
+            </button>
+          ) : null}
           {/* No celular, a pasta inicial mostra a logo; o caminho aparece só dentro das subpastas. */}
-          {breadcrumbs.length === 1 && <div className="flex-1 md:hidden"><Logo height={22}/></div>}
-          <nav aria-label="Caminho" className={cn('min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-base [scrollbar-width:none]', breadcrumbs.length === 1 ? 'hidden md:flex' : 'flex')}>
+          {!pastaAcima && <div className="flex-1 md:hidden"><Logo height={22}/></div>}
+          <nav aria-label="Caminho" className={cn('min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-base [scrollbar-width:none]', pastaAcima ? 'flex' : 'hidden md:flex')}>
             {breadcrumbs.map((crumb, index) => (
-              <div key={index} className="flex shrink-0 items-center gap-1">
+              <div key={crumb.path || 'raiz'} className="flex shrink-0 items-center gap-1">
                 {index > 0 && <ChevronRight className="size-3.5 text-text-3"/>}
-                <button onClick={() => navigateToBreadcrumb(index)}
-                  className={cn('rounded-md px-1.5 py-1 transition-colors hover:bg-surface-hover', index === breadcrumbs.length - 1 ? 'font-medium text-text' : 'text-text-3 hover:text-text')}>
+                <button onClick={() => index < breadcrumbs.length - 1 && abrirPasta(crumb.path)}
+                  className={cn('rounded-md px-1.5 py-1 transition-colors', index === breadcrumbs.length - 1 ? 'font-medium text-text' : 'text-text-3 hover:bg-surface-hover hover:text-text')}>
                   {crumb.name}
                 </button>
               </div>
@@ -607,9 +760,6 @@ export function FileManager() {
           </nav>
           <div className="flex shrink-0 items-center gap-1.5">
             <button onClick={() => loadItems(currentPath, false)} aria-label="Atualizar" title="Atualizar" className="btn btn-ghost size-9"><RefreshCw className="size-4"/></button>
-            <button onClick={alternarSelecao} className={cn('btn h-9 px-3.5 text-base max-md:hidden', selectionMode ? 'btn-primary' : 'btn-secondary')}>
-              <CheckSquare className="size-4"/> {selectionMode ? 'Cancelar' : 'Selecionar'}
-            </button>
             <button onClick={abrirNovaPasta} className="btn btn-secondary h-9 px-3.5 text-base max-lg:hidden"><FolderPlus className="size-4"/> Nova pasta</button>
             <label htmlFor="enviar-pasta" role="button" className="btn btn-secondary h-9 px-3.5 text-base max-md:hidden"><FolderUp className="size-4"/> Enviar pasta</label>
             <label htmlFor="enviar-arquivos" role="button" className="btn btn-primary h-9 px-3.5 text-base max-md:hidden"><Upload className="size-4"/> Enviar arquivos</label>
@@ -617,43 +767,76 @@ export function FileManager() {
         </header>
 
         <main className="mx-auto w-full max-w-[1280px] px-4 pb-32 pt-7 sm:px-6 md:pb-16 lg:px-8">
-          <div className="mb-6 flex flex-col gap-1">
+          <div className="mb-5 flex flex-col gap-1">
             <h1 className="truncate text-2xl font-semibold tracking-[-0.02em]">{pastaAtual}</h1>
             <p className="text-base text-text-3">
-              {initialLoading ? 'Carregando...' : items.length ? `${plural(folders.length, 'pasta', 'pastas')} · ${plural(files.length, 'arquivo', 'arquivos')}` : 'Pasta vazia'}
+              {initialLoading ? 'Carregando...' : items.length ? `${plural(totalPasta.pastas, 'pasta', 'pastas')} · ${plural(totalPasta.arquivos, 'arquivo', 'arquivos')}` : 'Pasta vazia'}
             </p>
           </div>
+
+          {/* FERRAMENTAS: busca, ordem, vista, seleção */}
+          {!initialLoading && items.length > 0 && (
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <div className="relative min-w-0 flex-[1_1_220px] sm:max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-3"/>
+                <input value={busca} onChange={e => setBusca(e.target.value)} placeholder={`Buscar em ${pastaAtual}`} aria-label="Buscar nesta pasta"
+                  className="campo h-9 pl-9 pr-9"/>
+                {busca && <button onClick={() => setBusca('')} aria-label="Limpar busca" className="btn btn-ghost absolute right-0.5 top-0.5 size-8"><X className="size-4"/></button>}
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="btn btn-secondary h-9 px-3 text-base"><ArrowDownUp className="size-4"/> <span className="max-sm:hidden">{rotuloOrdem[ordem]}</span></button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className={menuClasse}>
+                  <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-text-3">Ordenar por</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={ordem} onValueChange={v => mudarOrdem(v as Ordem)}>
+                    {(Object.keys(rotuloOrdem) as Ordem[]).map(o => <DropdownMenuRadioItem key={o} value={o}>{rotuloOrdem[o]}</DropdownMenuRadioItem>)}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="flex rounded-[var(--radius-control)] border border-line bg-surface p-0.5 max-md:hidden" role="group" aria-label="Vista">
+                {([['grade', LayoutGrid, 'Grade'], ['lista', List, 'Lista']] as const).map(([v, Icone, nome]) => (
+                  <button key={v} onClick={() => mudarVista(v)} aria-pressed={vista === v} aria-label={nome} title={nome}
+                    className={cn('btn size-8 rounded-[8px]', vista === v ? 'bg-surface-hover text-text shadow-[inset_0_0_0_1px_var(--line)]' : 'text-text-3 hover:text-text')}>
+                    <Icone className="size-4"/>
+                  </button>
+                ))}
+              </div>
+              <button onClick={alternarSelecao} className={cn('btn h-9 px-3 text-base max-md:hidden', selectionMode ? 'btn-primary' : 'btn-secondary')}>
+                <CheckSquare className="size-4"/> {selectionMode ? 'Cancelar' : 'Selecionar'}
+              </button>
+            </div>
+          )}
 
           {/* BARRA DE SELEÇÃO */}
           {selectionMode && (
             <div className="glass sticky top-[76px] z-[5] mb-5 flex flex-wrap items-center gap-2 rounded-[14px] border border-line px-3 py-2.5 shadow-[var(--shadow-pop)]">
               <span className="px-1 text-base font-medium tabular">{plural(selectedIds.size, 'selecionado', 'selecionados')}</span>
-              <button onClick={() => setSelectedIds(new Set(items.map(i => i.id)))} className="btn btn-ghost h-8 px-2.5 text-sm">Todos</button>
+              <button onClick={() => setSelectedIds(new Set(visiveis.map(i => i.id)))} className="btn btn-ghost h-8 px-2.5 text-sm">Todos</button>
               <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost h-8 px-2.5 text-sm">Limpar</button>
               <span className="flex-1"/>
               {selectedIds.size > 0 && (
                 <>
                   <button onClick={() => openMoveModal()} className="btn btn-secondary h-8 px-3 text-sm"><Move className="size-4"/> Mover</button>
                   <button onClick={downloadSelected} className="btn btn-secondary h-8 px-3 text-sm"><Download className="size-4"/> Baixar</button>
-                  <button onClick={handleDeleteSelected} className="btn btn-danger h-8 px-3 text-sm"><Trash2 className="size-4"/> Excluir</button>
+                  <button onClick={() => setExcluir(items.filter(i => selectedIds.has(i.id)))} className="btn btn-danger h-8 px-3 text-sm"><Trash2 className="size-4"/> Excluir</button>
                 </>
               )}
+              <button onClick={alternarSelecao} aria-label="Sair da seleção" className="btn btn-ghost size-8 md:hidden"><X className="size-4"/></button>
             </div>
           )}
 
-          {/* ARQUIVOS NA FILA */}
+          {/* ENVIOS */}
           {stagedFiles.length > 0 && (
             <section className="panel mb-6 overflow-hidden">
               <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-                <h2 className="text-base font-semibold">Envios</h2>
-                {pendentes > 0 && (
-                  <button onClick={handleUploadAll} disabled={isUploadingAll} className="btn btn-primary h-8 px-3 text-sm">
-                    {isUploadingAll ? <Loader2 className="size-4 animate-spin"/> : <Upload className="size-4"/>}
-                    {isUploadingAll ? 'Enviando...' : `Enviar ${plural(pendentes, 'arquivo', 'arquivos')}`}
-                  </button>
-                )}
+                <h2 className="flex items-center gap-2 text-base font-semibold">
+                  {enviandoAgora > 0 && <Loader2 className="size-4 animate-spin text-brand-text"/>}
+                  {enviandoAgora > 0 ? `Enviando ${plural(enviandoAgora, 'arquivo', 'arquivos')}` : 'Envios'}
+                </h2>
+                {enviandoAgora === 0 && <button onClick={() => setStagedFiles([])} className="btn btn-ghost h-8 px-2.5 text-sm">Limpar</button>}
               </div>
-              <ul>
+              <ul className="max-h-72 overflow-y-auto">
                 {stagedFiles.map(s => (
                   <li key={s.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
                     <span className="selo size-9 shrink-0"><FileIcon type={getFileType(s.file.name)} size={18}/></span>
@@ -661,7 +844,7 @@ export function FileManager() {
                       <p className="truncate text-base">{s.file.name}</p>
                       <div className="mt-0.5 flex items-center gap-2 text-xs">
                         <span className="text-text-3 tabular">{formatFileSize(s.file.size)}</span>
-                        {s.status === 'pending' && <span className="text-text-3">Aguardando</span>}
+                        {s.status === 'pending' && <span className="text-text-3">Na fila</span>}
                         {s.status === 'uploading' && <span className="text-brand-text tabular">{s.progress}%</span>}
                         {s.status === 'error' && <span className="truncate text-danger">{s.error}</span>}
                         {s.status === 'done' && <span className="flex items-center gap-1 text-success"><Check className="size-3"/> Enviado</span>}
@@ -672,8 +855,10 @@ export function FileManager() {
                         </div>
                       )}
                     </div>
-                    {s.status === 'uploading' && <Loader2 className="size-4 shrink-0 animate-spin text-brand-text"/>}
-                    {s.status !== 'done' && s.status !== 'uploading' && (
+                    {s.status === 'error' && s.error !== 'É uma pasta. Use "Enviar pasta".' && (
+                      <button onClick={() => tentarDeNovo(s.id)} className="btn btn-secondary h-8 px-2.5 text-sm">Tentar de novo</button>
+                    )}
+                    {(s.status === 'error' || s.status === 'pending') && (
                       <button onClick={() => cancelUpload(s.id)} className="btn btn-ghost size-8" aria-label="Tirar da fila"><X className="size-4"/></button>
                     )}
                   </li>
@@ -683,45 +868,63 @@ export function FileManager() {
           )}
 
           {initialLoading ? (
-            <div className="grid h-64 place-items-center"><Loader2 className="size-7 animate-spin text-brand-text" aria-label="Carregando"/></div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true" aria-label="Carregando">
+              {Array.from({ length: 8 }).map((_, i) => <div key={i} className="panel h-[62px] animate-pulse"/>)}
+            </div>
+          ) : items.length === 0 ? (
+            <button onClick={() => fileInputRef.current?.click()}
+              className="flex min-h-[300px] w-full flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border border-dashed border-line-strong px-6 py-12 text-center transition-colors hover:border-brand hover:bg-surface">
+              <span className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-brand-text"><UploadCloud className="size-7" aria-hidden/></span>
+              <span className="text-md font-medium">Esta pasta está vazia</span>
+              <span className="text-sm text-text-3">Toque para escolher arquivos ou arraste até aqui.</span>
+            </button>
+          ) : visiveis.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-center">
+              <span className="grid size-12 place-items-center rounded-2xl bg-surface text-text-3"><Search className="size-5"/></span>
+              <p className="text-md font-medium">Nada com “{busca}” nesta pasta</p>
+              <button onClick={() => setBusca('')} className="btn btn-ghost h-8 px-3 text-sm">Limpar busca</button>
+            </div>
           ) : (
             <>
-              {/* ÁREA DE SOLTAR */}
-              <button
-                onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={cn('mb-7 flex w-full flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border border-dashed text-center transition-colors',
-                  items.length === 0 ? 'min-h-[280px] px-6 py-12' : 'px-4 py-5 max-md:hidden',
-                  isDragging ? 'border-brand bg-brand-soft' : 'border-line-strong hover:border-brand hover:bg-surface')}
-              >
-                <span className={cn('grid place-items-center rounded-2xl bg-brand-soft text-brand-text', items.length === 0 ? 'size-14' : 'size-10')}>
-                  <UploadCloud className={items.length === 0 ? 'size-7' : 'size-5'} aria-hidden/>
-                </span>
-                <span className="text-md font-medium">{items.length === 0 ? 'Esta pasta está vazia' : 'Solte arquivos aqui para enviar'}</span>
-                <span className="text-sm text-text-3">{items.length === 0 ? 'Toque para escolher ou arraste arquivos até aqui.' : 'ou clique para escolher no computador'}</span>
-              </button>
-
-              {folders.length > 0 && (
-                <section className="mb-8">
-                  <h2 className="mb-3 text-sm font-medium text-text-3 max-md:hidden">Pastas</h2>
-                  <div className="grid gap-3 max-md:hidden sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {folders.map(item => <CartaoPasta key={item.id} item={item}/>)}
-                  </div>
-                </section>
-              )}
-              {files.length > 0 && (
-                <section className="max-md:hidden">
-                  <h2 className="mb-3 text-sm font-medium text-text-3">Arquivos</h2>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                    {files.map(item => <CartaoArquivo key={item.id} item={item}/>)}
-                  </div>
-                </section>
-              )}
-              {items.length > 0 && (
-                <div className="panel overflow-hidden md:hidden">
-                  {[...folders, ...files].map(item => <LinhaMobile key={item.id} item={item}/>)}
+              {/* Computador em grade */}
+              {vista === 'grade' && (
+                <div className="max-md:hidden">
+                  {folders.length > 0 && (
+                    <section className="mb-8">
+                      <h2 className="mb-3 text-sm font-medium text-text-3">Pastas</h2>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {folders.map(item => <CartaoPasta key={item.id} item={item}/>)}
+                      </div>
+                    </section>
+                  )}
+                  {files.length > 0 && (
+                    <section>
+                      <h2 className="mb-3 text-sm font-medium text-text-3">Arquivos</h2>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                        {files.map(item => <CartaoArquivo key={item.id} item={item}/>)}
+                      </div>
+                    </section>
+                  )}
+                  <p className="mt-8 text-center text-sm text-text-3">Dica: arraste arquivos para qualquer lugar da tela para enviar, ou para cima de uma pasta para enviar direto nela.</p>
                 </div>
               )}
+              {/* Computador em lista */}
+              {vista === 'lista' && (
+                <div className="panel overflow-hidden max-md:hidden">
+                  <div className="flex items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium text-text-3">
+                    {selectionMode && <span className="w-5"/>}
+                    <span className="flex-1 pl-[52px]">Nome</span>
+                    <span className="w-32">Modificado</span>
+                    <span className="w-24 text-right">Tamanho</span>
+                    <span className="w-[68px]"/>
+                  </div>
+                  {[...folders, ...files].map(item => <Linha key={item.id} item={item}/>)}
+                </div>
+              )}
+              {/* Celular */}
+              <div className="panel overflow-hidden md:hidden">
+                {[...folders, ...files].map(item => <Linha key={item.id} item={item} compacta/>)}
+              </div>
             </>
           )}
         </main>
@@ -751,10 +954,17 @@ export function FileManager() {
       {previewFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(4_3_10/0.92)] backdrop-blur-sm" onClick={() => setPreviewFile(null)}>
           <button onClick={() => setPreviewFile(null)} aria-label="Fechar" className="btn btn-secondary absolute right-4 top-4 z-10 size-10 rounded-full"><X className="size-5"/></button>
+          {imagens.length > 1 && (
+            <>
+              <button onClick={e => { e.stopPropagation(); passarImagem(-1) }} aria-label="Imagem anterior" className="btn btn-secondary absolute left-3 top-1/2 z-10 size-11 -translate-y-1/2 rounded-full"><ChevronLeft className="size-5"/></button>
+              <button onClick={e => { e.stopPropagation(); passarImagem(1) }} aria-label="Próxima imagem" className="btn btn-secondary absolute right-3 top-1/2 z-10 size-11 -translate-y-1/2 rounded-full"><ChevronRight className="size-5"/></button>
+            </>
+          )}
           <div className="flex max-h-[95vh] max-w-[95vw] flex-col items-center gap-4 p-4" onClick={e => e.stopPropagation()}>
-            <img src={getProxyUrl(previewFile)} alt={previewFile.name} className="max-h-[80vh] max-w-full rounded-[var(--radius-card)] object-contain"/>
+            <img key={previewFile.id} src={getProxyUrl(previewFile)} alt={previewFile.name} className="max-h-[80vh] max-w-full rounded-[var(--radius-card)] object-contain"/>
             <div className="flex items-center gap-3">
               <p className="max-w-[200px] truncate text-base md:max-w-[420px]">{previewFile.name}</p>
+              {imagens.length > 1 && <span className="text-sm text-text-3 tabular">{imagens.findIndex(f => f.id === previewFile.id) + 1} de {imagens.length}</span>}
               <a href={getDownloadUrl(previewFile.id)} target="_blank" rel="noopener noreferrer" className="btn btn-primary h-9 px-3.5 text-base"><Download className="size-4"/> Baixar</a>
             </div>
           </div>
@@ -800,6 +1010,25 @@ export function FileManager() {
       )}
 
       {/* JANELAS */}
+      <Dialog open={!!excluir} onOpenChange={aberto => !aberto && !excluindo && setExcluir(null)}>
+        <DialogContent className={dialogo}>
+          <DialogHeader>
+            <DialogTitle className="text-xl">
+              {excluir?.length === 1 ? `Excluir ${excluir[0].type === 'folder' ? 'a pasta' : 'o arquivo'}?` : `Excluir ${plural(excluir?.length ?? 0, 'item', 'itens')}?`}
+            </DialogTitle>
+            <DialogDescription className="text-text-2">
+              {excluir?.length === 1 ? <><span className="font-medium text-text">{excluir[0].name}</span>{excluir[0].type === 'folder' ? ' e tudo o que estiver dentro dela' : ''} vai para a lixeira do Drive da +Aura.</> : 'Os itens selecionados vão para a lixeira do Drive da +Aura.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <button onClick={() => setExcluir(null)} disabled={excluindo} className="btn btn-ghost h-9 px-3.5 text-base">Cancelar</button>
+            <button onClick={confirmarExclusao} disabled={excluindo} className="btn h-9 bg-danger px-3.5 text-base text-white hover:brightness-110">
+              {excluindo ? <Loader2 className="size-4 animate-spin"/> : <Trash2 className="size-4"/>} {excluindo ? 'Excluindo...' : 'Excluir'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showNewFolderModal} onOpenChange={setShowNewFolderModal}>
         <DialogContent className={dialogo}>
           <DialogHeader><DialogTitle className="text-xl">Nova pasta</DialogTitle><DialogDescription className="text-text-2">Ela será criada em {pastaAtual}.</DialogDescription></DialogHeader>
@@ -822,11 +1051,13 @@ export function FileManager() {
         <DialogContent className={dialogo}>
           <DialogHeader><DialogTitle className="text-xl">Renomear</DialogTitle><DialogDescription className="text-text-2">Escolha o novo nome.</DialogDescription></DialogHeader>
           <input value={renameValue} onChange={e => setRenameValue(e.target.value)}
-            className="campo h-11 px-3" placeholder="Novo nome"
-            onKeyDown={e => e.key === 'Enter' && handleRename()} autoFocus/>
+            className="campo h-11 px-3" placeholder="Novo nome" aria-invalid={renameValue.includes('/')}
+            onKeyDown={e => e.key === 'Enter' && handleRename()} autoFocus
+            onFocus={e => { const ponto = e.target.value.lastIndexOf('.'); if (selectedItem?.type === 'file' && ponto > 0) e.target.setSelectionRange(0, ponto) }}/>
+          {renameValue.includes('/') && <p className="-mt-2 text-xs text-danger">O nome não pode ter barra (/).</p>}
           <DialogFooter className="gap-2">
             <button onClick={() => setShowRenameModal(false)} className="btn btn-ghost h-9 px-3.5 text-base">Cancelar</button>
-            <button onClick={handleRename} disabled={!renameValue.trim()} className="btn btn-primary h-9 px-3.5 text-base">Salvar</button>
+            <button onClick={handleRename} disabled={!renameValue.trim() || renameValue.includes('/')} className="btn btn-primary h-9 px-3.5 text-base">Salvar</button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -849,7 +1080,7 @@ export function FileManager() {
           </div>
           <DialogFooter className="gap-2">
             <button onClick={() => setShowMoveModal(false)} className="btn btn-ghost h-9 px-3.5 text-base">Cancelar</button>
-            <button onClick={handleMoveSelected} disabled={moveLoading} className="btn btn-primary h-9 px-3.5 text-base">
+            <button onClick={handleMoveSelected} disabled={moveLoading || moveFolderPath === currentPath} className="btn btn-primary h-9 px-3.5 text-base">
               {moveLoading && <Loader2 className="size-4 animate-spin"/>} {moveLoading ? 'Movendo...' : 'Mover aqui'}
             </button>
           </DialogFooter>
