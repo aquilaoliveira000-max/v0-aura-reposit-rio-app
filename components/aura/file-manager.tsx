@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, DragEvent, useEffect, useMemo } from 'react'
+import { Fragment, useState, useCallback, useRef, DragEvent, useEffect, useMemo } from 'react'
 import {
   Upload, FolderPlus, ChevronRight, ChevronLeft, X, MoreHorizontal, Folder, LogOut, Check, RefreshCw, FolderUp,
   Trash2, Move, Loader2, Download, ArrowLeft, Menu, CheckSquare, Pencil, UploadCloud, Star, Search,
@@ -272,22 +272,61 @@ export function FileManager() {
   const handleDragOver = useCallback((e: DragEvent) => { e.preventDefault(); if (e.dataTransfer.types.includes('Files')) setIsDragging(true) }, [])
   // Só encerra quando o arrasto sai da janela (relatedTarget nulo), não ao passar entre elementos.
   const handleDragLeave = useCallback((e: DragEvent) => { e.preventDefault(); if (!e.relatedTarget) setIsDragging(false) }, [])
-  const handleDrop = (e: DragEvent) => { e.preventDefault(); setIsDragging(false); adicionarNaFila(Array.from(e.dataTransfer.files)) }
+  const handleDrop = (e: DragEvent) => { e.preventDefault(); setIsDragging(false); setDraggingItemId(null); setDragOverFolder(null); adicionarNaFila(Array.from(e.dataTransfer.files)) }
 
   const handleItemDragStart = (e: React.DragEvent, item: DriveItem) => {
-    setDraggingItemId(item.id); e.dataTransfer.setData('itemId', item.id)
+    e.dataTransfer.setData('itemId', item.id)
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingItemId(item.id)
   }
   const handleFolderDragOver = (e: React.DragEvent, id: string) => { e.preventDefault(); e.stopPropagation(); setDragOverFolder(id) }
   const handleFolderDragLeave = () => setDragOverFolder(null)
-  const handleFolderDrop = async (e: React.DragEvent, target: DriveItem) => {
-    e.preventDefault(); e.stopPropagation(); setDragOverFolder(null); setIsDragging(false)
-    if (e.dataTransfer.files.length) { adicionarNaFila(Array.from(e.dataTransfer.files), () => juntar(currentPath, target.name)); return }
-    const item = items.find(i => i.id === e.dataTransfer.getData('itemId'))
-    if (!item || item.id === target.id) return
-    setMovingIds(prev => new Set(prev).add(item.id))
-    try { await apiPost({ action: 'move', id: item.id, sig: item.sig, targetPath: juntar(currentPath, target.name) }); loadItems(currentPath, false) }
-    finally { setMovingIds(prev => { const n = new Set(prev); n.delete(item.id); return n }) }
+  /** Move os itens arrastados (o item, ou todos os selecionados se ele fizer parte da seleção). */
+  const moverArrastados = async (itemId: string, destino: string) => {
+    const base = items.find(i => i.id === itemId)
+    if (!base || destino === currentPath) return
+    const grupo = selectionMode && selectedIds.has(base.id) ? items.filter(i => selectedIds.has(i.id)) : [base]
+    // Uma pasta não entra nela mesma.
+    const alvo = grupo.filter(i => !(i.type === 'folder' && (destino === juntar(currentPath, i.name) || destino.startsWith(juntar(currentPath, i.name) + '/'))))
+    if (!alvo.length) return
+    setMovingIds(prev => { const n = new Set(prev); alvo.forEach(i => n.add(i.id)); return n })
+    try { await Promise.all(alvo.map(i => apiPost({ action: 'move', id: i.id, sig: i.sig, targetPath: destino }))); await loadItems(currentPath, false) }
+    finally { setMovingIds(new Set()); setSelectedIds(new Set()) }
   }
+  const handleFolderDrop = async (e: React.DragEvent, target: DriveItem) => {
+    e.preventDefault(); e.stopPropagation(); setDragOverFolder(null); setIsDragging(false); setDraggingItemId(null)
+    if (e.dataTransfer.files.length) { adicionarNaFila(Array.from(e.dataTransfer.files), () => juntar(currentPath, target.name)); return }
+    const itemId = e.dataTransfer.getData('itemId')
+    if (itemId && itemId !== target.id) await moverArrastados(itemId, juntar(currentPath, target.name))
+  }
+  /** Soltar um item no caminho (ex.: "Meus arquivos") move para aquela pasta. */
+  const alvoDeCaminho = (path: string, atual: boolean) => atual ? {} : {
+    onDragOver: (e: React.DragEvent) => { if (draggingItemId) { e.preventDefault(); e.stopPropagation(); setDragOverFolder(`caminho:${path}`) } },
+    onDragLeave: () => setDragOverFolder(null),
+    onDrop: async (e: React.DragEvent) => {
+      e.preventDefault(); e.stopPropagation(); setDragOverFolder(null); setDraggingItemId(null)
+      const itemId = e.dataTransfer.getData('itemId')
+      if (itemId) await moverArrastados(itemId, path)
+    },
+  }
+
+  // Toque longo no celular: entra na seleção com o item marcado (lá não existe arrastar).
+  const toqueLongo = useRef<{ timer?: ReturnType<typeof setTimeout>; disparou: boolean }>({ disparou: false })
+  const segurar = (item: DriveItem) => ({
+    onTouchStart: () => {
+      toqueLongo.current.disparou = false
+      clearTimeout(toqueLongo.current.timer)
+      toqueLongo.current.timer = setTimeout(() => {
+        toqueLongo.current.disparou = true
+        navigator.vibrate?.(15)
+        setSelectionMode(true)
+        setSelectedIds(prev => new Set(prev).add(item.id))
+      }, 480)
+    },
+    onTouchMove: () => clearTimeout(toqueLongo.current.timer),
+    onTouchEnd: () => clearTimeout(toqueLongo.current.timer),
+    onContextMenu: (e: React.MouseEvent) => { if (toqueLongo.current.disparou) e.preventDefault() },
+  })
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => { adicionarNaFila(Array.from(e.target.files || [])); e.target.value = '' }
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -465,6 +504,8 @@ export function FileManager() {
   }
 
   const abrirItem = (item: DriveItem) => {
+    // O toque longo já marcou o item; o "clique" que vem junto não deve desmarcar.
+    if (toqueLongo.current.disparou) { toqueLongo.current.disparou = false; return }
     if (selectionMode) { toggleSelect(item.id); return }
     if (item.type === 'folder') abrirPasta(juntar(currentPath, item.name))
     else if (isImage(item.mimeType, item.name)) setPreviewFile(item)
@@ -515,6 +556,8 @@ export function FileManager() {
     setPreviewFile(imagens[(i + passo + imagens.length) % imagens.length] ?? previewFile)
   }
 
+  // Cartões, linhas e menus são funções chamadas direto, não componentes: assim o React não
+  // recria o elemento a cada render, o que cancelava o arrasto e deixava o cartão preso.
   const ItemMenu = ({ item }: { item: DriveItem }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -592,15 +635,15 @@ export function FileManager() {
       style={estiloCor(item.cor)}
       className={cn('panel hover-lift group relative flex items-center gap-3 py-2.5 pl-3 pr-2', estadoCard(item))}
     >
-      {selectionMode && <Marcador item={item}/>}
+      {selectionMode && Marcador({ item })}
       <button onClick={() => abrirItem(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <span className="selo size-10 shrink-0"><IconePasta cor={item.cor}/></span>
         <span className="min-w-0 flex-1 truncate text-base font-medium" title={item.name}>{item.name}</span>
-        <Favorito item={item}/>
+        {Favorito({ item })}
       </button>
       {ocupado(item)
         ? <Loader2 className="size-4 shrink-0 animate-spin text-brand-text"/>
-        : !selectionMode && <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"><ItemMenu item={item}/></div>}
+        : !selectionMode && <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">{ItemMenu({ item })}</div>}
     </div>
   )
 
@@ -613,7 +656,7 @@ export function FileManager() {
     >
       <button onClick={() => abrirItem(item)} className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden border-b border-line bg-surface-sunken">
         {isImage(item.mimeType, item.name) ? (
-          <img src={getProxyUrl(item)} alt="" loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
+          <img src={getProxyUrl(item)} alt="" loading="lazy" draggable={false} className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
         ) : (
           <span className="flex flex-col items-center gap-2">
             <FileIcon type={getFileType(item.name)} size={30}/>
@@ -623,13 +666,13 @@ export function FileManager() {
         {ocupado(item) && <span className="absolute inset-0 grid place-items-center bg-black/40"><Loader2 className="size-5 animate-spin text-brand-text"/></span>}
         {item.favorito && <span className="absolute right-2 top-2 grid size-6 place-items-center rounded-full bg-black/55 backdrop-blur"><Star className="size-3.5 fill-current text-warning"/></span>}
       </button>
-      {selectionMode && <div className="absolute left-2.5 top-2.5"><Marcador item={item}/></div>}
+      {selectionMode && <div className="absolute left-2.5 top-2.5">{Marcador({ item })}</div>}
       <div className="flex items-center gap-1 py-2 pl-3 pr-1.5">
         <button onClick={() => abrirItem(item)} className="min-w-0 flex-1 text-left">
           <p className="truncate text-sm font-medium" title={item.name}>{item.name}</p>
           <p className="truncate text-xs text-text-3 tabular">{[item.size ? formatFileSize(item.size) : '', dataCurta(item.modifiedAt)].filter(Boolean).join(' · ')}</p>
         </button>
-        {!selectionMode && <ItemMenu item={item}/>}
+        {!selectionMode && ItemMenu({ item })}
       </div>
     </div>
   )
@@ -641,18 +684,19 @@ export function FileManager() {
       onDragStart={e => handleItemDragStart(e, item)}
       onDragEnd={() => setDraggingItemId(null)}
       {...(item.type === 'folder' ? alvoDePasta(item) : {})}
-      className={cn('group flex items-center gap-3 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 md:px-4',
+      {...(compacta ? segurar(item) : {})}
+      className={cn('group flex select-none items-center gap-3 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 [-webkit-touch-callout:none] md:px-4',
         selectionMode && selectedIds.has(item.id) ? 'bg-brand-soft' : 'hover:bg-surface-hover active:bg-surface-hover',
         dragOverFolder === item.id && 'bg-brand-soft', ocupado(item) && 'opacity-40')}>
-      {selectionMode && <Marcador item={item}/>}
+      {selectionMode && Marcador({ item })}
       <button onClick={() => abrirItem(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <span className="selo size-10 shrink-0 overflow-hidden" style={item.type === 'folder' ? estiloCor(item.cor) : undefined}>
           {item.type === 'folder' ? <IconePasta cor={item.cor} size={20}/> : isImage(item.mimeType, item.name)
-            ? <img src={getProxyUrl(item)} alt="" loading="lazy" className="size-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
+            ? <img src={getProxyUrl(item)} alt="" loading="lazy" draggable={false} className="size-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}/>
             : <FileIcon type={getFileType(item.name)} size={19}/>}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5"><span className="truncate text-base font-medium">{item.name}</span><Favorito item={item}/></span>
+          <span className="flex items-center gap-1.5"><span className="truncate text-base font-medium">{item.name}</span>{Favorito({ item })}</span>
           <span className="block text-xs text-text-3 tabular md:hidden">{item.type === 'folder' ? 'Pasta' : [item.size ? formatFileSize(item.size) : '', dataCurta(item.modifiedAt)].filter(Boolean).join(' · ')}</span>
         </span>
         <span className="hidden w-32 shrink-0 text-sm text-text-3 tabular md:block">{dataCurta(item.modifiedAt)}</span>
@@ -669,7 +713,7 @@ export function FileManager() {
               <Download className="size-[18px]"/>
             </button>
           )}
-          <ItemMenu item={item}/>
+          {ItemMenu({ item })}
         </div>
       )}
     </div>
@@ -689,9 +733,10 @@ export function FileManager() {
         {breadcrumbs.map((crumb, index) => {
           const atual = index === breadcrumbs.length - 1
           return (
-            <button key={crumb.path || 'raiz'} onClick={() => !atual && abrirPasta(crumb.path)}
+            <button key={crumb.path || 'raiz'} onClick={() => !atual && abrirPasta(crumb.path)} {...alvoDeCaminho(crumb.path, atual)}
               className={cn('group flex h-9 items-center gap-2.5 rounded-[10px] pr-2.5 text-left text-base transition-colors duration-150',
-                atual ? 'bg-brand-soft font-medium text-text shadow-[inset_0_0_0_1px_var(--line)]' : 'text-text-2 hover:bg-surface-hover hover:text-text')}
+                atual ? 'bg-brand-soft font-medium text-text shadow-[inset_0_0_0_1px_var(--line)]' : 'text-text-2 hover:bg-surface-hover hover:text-text',
+                dragOverFolder === `caminho:${crumb.path}` && 'bg-brand-soft text-text ring-1 ring-brand')}
               style={{ paddingLeft: 10 + Math.min(index, 6) * 12 }}>
               <Folder className={cn('size-[18px] shrink-0', atual ? 'text-brand-text' : 'text-text-3 group-hover:text-text-2')} aria-hidden/>
               <span className="flex-1 truncate">{crumb.name}</span>
@@ -709,20 +754,21 @@ export function FileManager() {
   const rotuloOrdem: Record<Ordem, string> = { nome: 'Nome', recentes: 'Mais recentes', tamanho: 'Tamanho' }
 
   return (
-    <div className="relative min-h-dvh" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+    <div className="relative min-h-dvh" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+      onDragEnd={() => { setDraggingItemId(null); setDragOverFolder(null); setIsDragging(false) }}>
       <div className="ambient" aria-hidden/>
       {/* Entradas de arquivo únicas, acionadas pelos botões e pela área de soltar. */}
       <input ref={fileInputRef} id="enviar-arquivos" type="file" className="hidden" multiple onChange={handleFileSelect}/>
       <input id="enviar-pasta" type="file" className="hidden" multiple {...({ webkitdirectory: '' } as any)} onChange={handleFolderSelect}/>
 
-      <aside className="glass fixed inset-y-0 left-0 z-20 hidden w-[248px] border-r border-line lg:block"><Menu_/></aside>
+      <aside className="glass fixed inset-y-0 left-0 z-20 hidden w-[248px] border-r border-line lg:block">{Menu_()}</aside>
 
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button type="button" aria-label="Fechar menu" className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)}/>
           <aside className="glass absolute inset-y-0 left-0 w-[min(280px,85vw)] border-r border-line" style={{ background: 'var(--glass-strong)' }}>
             <button onClick={() => setSidebarOpen(false)} aria-label="Fechar menu" className="btn btn-ghost absolute right-2 top-4 size-9"><X className="size-4"/></button>
-            <Menu_/>
+            {Menu_()}
           </aside>
         </div>
       )}
@@ -751,8 +797,9 @@ export function FileManager() {
             {breadcrumbs.map((crumb, index) => (
               <div key={crumb.path || 'raiz'} className="flex shrink-0 items-center gap-1">
                 {index > 0 && <ChevronRight className="size-3.5 text-text-3"/>}
-                <button onClick={() => index < breadcrumbs.length - 1 && abrirPasta(crumb.path)}
-                  className={cn('rounded-md px-1.5 py-1 transition-colors', index === breadcrumbs.length - 1 ? 'font-medium text-text' : 'text-text-3 hover:bg-surface-hover hover:text-text')}>
+                <button onClick={() => index < breadcrumbs.length - 1 && abrirPasta(crumb.path)} {...alvoDeCaminho(crumb.path, index === breadcrumbs.length - 1)}
+                  className={cn('rounded-md px-1.5 py-1 transition-colors', index === breadcrumbs.length - 1 ? 'font-medium text-text' : 'text-text-3 hover:bg-surface-hover hover:text-text',
+                    dragOverFolder === `caminho:${crumb.path}` && 'bg-brand-soft text-text ring-1 ring-brand')}>
                   {crumb.name}
                 </button>
               </div>
@@ -893,7 +940,7 @@ export function FileManager() {
                     <section className="mb-8">
                       <h2 className="mb-3 text-sm font-medium text-text-3">Pastas</h2>
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {folders.map(item => <CartaoPasta key={item.id} item={item}/>)}
+                        {folders.map(item => <Fragment key={item.id}>{CartaoPasta({ item })}</Fragment>)}
                       </div>
                     </section>
                   )}
@@ -901,7 +948,7 @@ export function FileManager() {
                     <section>
                       <h2 className="mb-3 text-sm font-medium text-text-3">Arquivos</h2>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                        {files.map(item => <CartaoArquivo key={item.id} item={item}/>)}
+                        {files.map(item => <Fragment key={item.id}>{CartaoArquivo({ item })}</Fragment>)}
                       </div>
                     </section>
                   )}
@@ -918,12 +965,12 @@ export function FileManager() {
                     <span className="w-24 text-right">Tamanho</span>
                     <span className="w-[68px]"/>
                   </div>
-                  {[...folders, ...files].map(item => <Linha key={item.id} item={item}/>)}
+                  {[...folders, ...files].map(item => <Fragment key={item.id}>{Linha({ item })}</Fragment>)}
                 </div>
               )}
               {/* Celular */}
               <div className="panel overflow-hidden md:hidden">
-                {[...folders, ...files].map(item => <Linha key={item.id} item={item} compacta/>)}
+                {[...folders, ...files].map(item => <Fragment key={item.id}>{Linha({ item, compacta: true })}</Fragment>)}
               </div>
             </>
           )}
